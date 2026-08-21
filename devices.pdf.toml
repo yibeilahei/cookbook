@@ -1,0 +1,40 @@
+# Device profiles for topdf.py. Add or edit entries freely.
+#
+#   width/height  panel native resolution in portrait (pixels). The PDF page
+#                 is sized width x height points so pages fill the screen.
+#   orientation   "portrait" or "landscape". Landscape swaps width/height so
+#                 pages are laid out sideways.
+#   font_size     PDF default font size for this device.
+#
+# "default" is the device pre-selected in the interactive menu.
+
+default = "kpw11"
+
+# CJK fonts used when converting ebooks to PDF. Calibre looks these up by
+# family name on the local OS, so each platform has its own table.
+# Windows: Yu Mincho / Yu Gothic ship with the Japanese language pack.
+# Alternatives: MS Mincho, MS Gothic, Meiryo, Noto Serif/Sans CJK JP.
+
+[fonts.macos]
+serif = "Hiragino Mincho ProN"
+sans = "Hiragino Sans"
+mono = "Menlo"
+
+[fonts.windows]
+serif = "Yu Mincho"
+sans = "Yu Gothic"
+mono = "Consolas"
+
+[devices.kpw11]
+label = "Kindle Paperwhite 11th"  # 6.8", 300 PPI
+width = 1236
+height = 1648
+orientation = "portrait"
+font_size = 100
+
+[devices.rp1]
+label = "Sony DPT-RP1"       # 13.3", ~207 PPI
+width = 1650
+height = 2200
+orientation = "portrait"
+font_size = 160
