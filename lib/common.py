@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from slugify import slugify
+
 try:
     import tomllib
 except ModuleNotFoundError:  # Python < 3.11
@@ -245,7 +247,11 @@ def plan_jobs(inputs: list[Path], device: str, ext: str,
             print(f"Skipping (already PDF): {src}")
             continue
         out_dir = (output_dir or (src.parent / "output")).resolve()
-        dest = (out_dir / f"{src.stem}_{device}.{ext}").resolve()
+        # .xtch filenames must stay ASCII-safe for the CrossPoint reader's
+        # filesystem, so slugify non-ASCII (e.g. CJK/accented) source names.
+        # PDFs keep the original stem.
+        stem = (slugify(src.stem) or "book") if ext == "xtch" else src.stem
+        dest = (out_dir / f"{stem}_{device}.{ext}").resolve()
         if dest in seen:
             print(f"Skipping (same output as {seen[dest]}): {src} -> {dest}",
                   file=sys.stderr)

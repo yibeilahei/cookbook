@@ -18,6 +18,7 @@ import sys
 import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
+from unidecode import unidecode
 
 # Default panel geometry in CrossPoint portrait orientation (X4). The X3 is
 # 528x792. Overridable via --width/--height (see lib/Xtc/Xtc/XtcTypes.h).
@@ -130,7 +131,10 @@ def build_chapters(doc: fitz.Document, page_count: int) -> list:
     for _level, title, page in toc:
         if page is None or page < 1 or page > page_count:
             continue
-        name = title.strip()
+        # Chapter names are stored in a fixed-size, null-terminated field the
+        # device reads as plain text, so transliterate to ASCII (e.g. CJK/
+        # accented titles) rather than risk mojibake on the reader.
+        name = unidecode(title.strip()).strip()
         if name:
             entries.append((name, page))
     entries.sort(key=lambda e: e[1])
