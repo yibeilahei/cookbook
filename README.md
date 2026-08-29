@@ -73,5 +73,9 @@ font_size = 56         # Calibre PDF default font size
 ```
 
 - `default` sets which device is pre-selected in that app's menu.
+- `cjk_language` (`devices.xtch.toml` only) controls how CJK in `.xtch`
+  filenames and chapter names is turned into ASCII. `japanese` (default)
+  uses Hepburn romaji, `chinese` uses pinyin, `korean` uses Revised
+  Romanization of hangul. The low-level packer accepts `--cjk-language`.
 - `[fonts.macos]` / `[fonts.windows]` set the CJK fonts used for ebook → PDF
   conversion on each OS. Change these if a family is not installed.

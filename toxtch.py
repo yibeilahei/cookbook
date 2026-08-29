@@ -11,13 +11,15 @@ from pathlib import Path
 from lib import common
 
 
-def pdf_to_xtch(pdf: Path, xtch: Path, width: int, height: int, dpi: int) -> None:
+def pdf_to_xtch(pdf: Path, xtch: Path, width: int, height: int, dpi: int,
+                cjk_language: str) -> None:
     from lib.pdf2xtch import convert as pack_xtch
 
     pdf = pdf.resolve()
     xtch.parent.mkdir(parents=True, exist_ok=True)
     print(f"Packing: {pdf} -> {xtch}")
-    pack_xtch(str(pdf), str(xtch), dpi, 0, "", "", 0, width, height)
+    pack_xtch(str(pdf), str(xtch), dpi, 0, "", "", 0, width, height,
+              cjk_language=cjk_language)
 
 
 def main() -> None:
@@ -32,8 +34,10 @@ def main() -> None:
     device = common.choose_device(config)
     dev = config["devices"][device]
     width, height, dpi, size = common.panel_size(dev, device)
+    cjk_language = common.cjk_language_from_config(config)
 
-    jobs = common.plan_jobs(inputs, device, "xtch", args.output_dir)
+    jobs = common.plan_jobs(inputs, device, "xtch", args.output_dir,
+                            cjk_language)
     if not jobs:
         sys.exit("Nothing to do.")
 
@@ -51,7 +55,7 @@ def main() -> None:
                 ebook_convert = common.find_ebook_convert()
             pdf = out_dir / f"{src.stem}_{device}.pdf"
             common.ebook_to_pdf(ebook_convert, src, pdf, size, fonts, font_size)
-        pdf_to_xtch(pdf, dest, width, height, dpi)
+        pdf_to_xtch(pdf, dest, width, height, dpi, cjk_language)
 
 
 if __name__ == "__main__":

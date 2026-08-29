@@ -18,7 +18,15 @@ import sys
 import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
-from unidecode import unidecode
+
+try:
+    from .common import (
+        DEFAULT_CJK_LANGUAGE, ascii_slug, normalize_cjk_language, to_ascii,
+    )
+except ImportError:
+    from common import (
+        DEFAULT_CJK_LANGUAGE, ascii_slug, normalize_cjk_language, to_ascii,
+    )
 
 # Default panel geometry in CrossPoint portrait orientation (X4). The X3 is
 # 528x792. Overridable via --width/--height (see lib/Xtc/Xtc/XtcTypes.h).
@@ -120,7 +128,8 @@ def _build_metadata(title: str, author: str, chapter_count: int) -> bytes:
             + struct.pack("<IHH8x", 0, 0, chapter_count))  # createTime, coverPage, chapterCount
 
 
-def build_chapters(doc: fitz.Document, page_count: int) -> list:
+def build_chapters(doc: fitz.Document, page_count: int,
+                   cjk_language: str = DEFAULT_CJK_LANGUAGE) -> list:
     """Extract (name, startPage, endPage) 1-based ranges from the PDF outline.
 
     Pages are stored 1-based; the device decrements them to a 0-based index.
@@ -134,7 +143,7 @@ def build_chapters(doc: fitz.Document, page_count: int) -> list:
         # Chapter names are stored in a fixed-size, null-terminated field the
         # device reads as plain text, so transliterate to ASCII (e.g. CJK/
         # accented titles) rather than risk mojibake on the reader.
-        name = unidecode(title.strip()).strip()
+        name = to_ascii(title.strip(), cjk_language)
         if name:
             entries.append((name, page))
     entries.sort(key=lambda e: e[1])
@@ -210,7 +219,8 @@ def _write_book(out_path: str, doc: fitz.Document, page_indices: list, chapters:
 
 
 def convert(pdf_path: str, out_path: str, dpi: int, read_direction: int,
-            title: str, author: str, max_pages: int, width: int, height: int) -> None:
+            title: str, author: str, max_pages: int, width: int, height: int,
+            *, cjk_language: str = DEFAULT_CJK_LANGUAGE) -> None:
     # XTH planes are column-major with 8 vertical pixels per byte, but the
     # declared dataSize is ((w*h+7)/8)*2; the two only agree when height is a
     # multiple of 8, otherwise every page offset would be wrong.
@@ -230,7 +240,8 @@ def convert(pdf_path: str, out_path: str, dpi: int, read_direction: int,
     title = title or meta.get("title") or ""
     author = author or meta.get("author") or ""
 
-    _write_book(out_path, doc, list(range(page_count)), build_chapters(doc, page_count),
+    _write_book(out_path, doc, list(range(page_count)),
+                build_chapters(doc, page_count, cjk_language),
                 dpi, read_direction, title, author, width, height)
 
 
@@ -257,16 +268,23 @@ def main() -> None:
                         help=f"Panel width in portrait orientation (default: {DEFAULT_WIDTH}; X3: 528)")
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT,
                         help=f"Panel height in portrait orientation (default: {DEFAULT_HEIGHT}; X3: 792)")
+    parser.add_argument(
+        "--cjk-language", default=DEFAULT_CJK_LANGUAGE,
+        help="CJK romanization for chapter names and the default output filename: "
+             "japanese (default), chinese, or korean")
     args = parser.parse_args()
+    cjk_language = normalize_cjk_language(args.cjk_language)
 
     if args.output:
         output = args.output
     else:
-        stem = os.path.splitext(os.path.basename(args.pdf))[0]
-        output = os.path.join(os.path.dirname(args.pdf), stem + XTCH_EXT)
+        stem = ascii_slug(
+            os.path.splitext(os.path.basename(args.pdf))[0], cjk_language)
+        output = os.path.join(os.path.dirname(args.pdf) or ".", stem + XTCH_EXT)
 
     convert(args.pdf, output, args.dpi, args.read_direction,
-            args.title, args.author, args.max_pages, args.width, args.height)
+            args.title, args.author, args.max_pages, args.width, args.height,
+            cjk_language=cjk_language)
 
 
 if __name__ == "__main__":
