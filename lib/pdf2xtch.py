@@ -12,8 +12,11 @@ Dependencies: pymupdf, pillow, numpy  (see requirements.txt)
 
 import argparse
 import os
+import shutil
 import struct
 import sys
+import tempfile
+import zlib
 
 import fitz  # PyMuPDF
 import numpy as np
@@ -98,6 +101,22 @@ def _page_data_size(width: int, height: int) -> int:
     return XTH_PAGE_HEADER_SIZE + ((width * height + 7) // 8) * 2
 
 
+def compress_page(raw: bytes) -> tuple:
+    """Raw-DEFLATE compress `raw` (no zlib/gzip wrapper, matches lib/Xtch's puff
+    decoder). Falls back to storing the page uncompressed if deflate doesn't
+    actually shrink it (e.g. already-noisy bitmaps), so compression is always a
+    net win or a no-op.
+
+    Returns (body, compression) where compression is the XTH PageHeader byte
+    (0=raw, 1=raw-DEFLATE).
+    """
+    compressor = zlib.compressobj(9, zlib.DEFLATED, -15)
+    compressed = compressor.compress(raw) + compressor.flush()
+    if len(compressed) < len(raw):
+        return compressed, 1
+    return raw, 0
+
+
 def render_page(page: fitz.Page, dpi: int, width: int, height: int) -> np.ndarray:
     mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
     pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY, alpha=False)
@@ -163,6 +182,13 @@ def _write_book(out_path: str, doc: fitz.Document, page_indices: list, chapters:
 
     `chapters` holds (name, startPage, endPage) 1-based ranges relative to
     `page_indices` (page 1 == page_indices[0]).
+
+    Pages are compressed independently (per-page raw-DEFLATE, falling back to
+    raw storage if that doesn't help), so their on-disk size varies. That means
+    offsets aren't known until every page has been rendered and compressed, so
+    this writes page bodies to a spooled temp file first (pass 1), then writes
+    the real file with the now-known page table followed by a straight copy of
+    the temp file's contents (pass 2).
     """
     page_count = len(page_indices)
     chapter_table = bytearray()
@@ -172,49 +198,66 @@ def _write_book(out_path: str, doc: fitz.Document, page_indices: list, chapters:
     chapter_offset = CHAPTER_TABLE_OFF if chapters else 0
     page_table_off = CHAPTER_TABLE_OFF + len(chapter_table)
     data_offset = page_table_off + page_count * PAGE_TABLE_ENTRY_SIZE
-    page_data_size = _page_data_size(width, height)
 
-    header = struct.pack(
-        HEADER_FMT,
-        XTCH_MAGIC,          # magic
-        1, 0,                # versionMajor, versionMinor
-        page_count,          # pageCount
-        read_direction,      # readDirection
-        1,                   # hasMetadata
-        0,                   # hasThumbnails
-        1 if chapters else 0,  # hasChapters
-        1,                   # currentPage (1-based)
-        TITLE_OFF,           # metadataOffset
-        page_table_off,      # pageTableOffset
-        data_offset,         # dataOffset
-        0,                   # thumbOffset
-        chapter_offset,      # chapterOffset
-        0,                   # padding
-    )
-
-    page_table = bytearray()
-    for i in range(page_count):
-        entry_offset = data_offset + i * page_data_size
-        page_table += struct.pack(
-            PAGE_TABLE_ENTRY_FMT, entry_offset, page_data_size, width, height)
-
-    page_header = struct.pack(
-        XTH_PAGE_HEADER_FMT,
-        XTH_MAGIC, width, height, 0, 0,
-        page_data_size - XTH_PAGE_HEADER_SIZE, 0)
-
-    with open(out_path, "wb") as f:
-        f.write(header)
-        f.write(_build_metadata(title, author, len(chapters)))
-        f.write(chapter_table)
-        f.write(page_table)
+    # Pass 1: render + compress each page, spooling "page_header + body" to a
+    # temp file so peak memory stays O(1) page regardless of book length.
+    page_sizes = []
+    # 64 MiB spool threshold before falling back to a real temp file; either
+    # way this is scratch space, never the final .xtch bytes.
+    with tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024) as spool:
         for n, page_index in enumerate(page_indices):
             gray = render_page(doc.load_page(page_index), dpi, width, height)
-            f.write(page_header)
-            f.write(quantize_to_xth(gray))
+            raw = quantize_to_xth(gray)
+            body, compression = compress_page(raw)
+            page_header = struct.pack(
+                XTH_PAGE_HEADER_FMT,
+                XTH_MAGIC, width, height, 0, compression, len(body), 0)
+            spool.write(page_header)
+            spool.write(body)
+            page_sizes.append(len(page_header) + len(body))
             print(f"  page {n + 1}/{page_count}", end="\r", file=sys.stderr, flush=True)
 
-    print(f"\nWrote {out_path} ({page_count} pages, {len(chapters)} chapters)",
+        # Pass 2: now that every page's on-disk size is known, compute offsets,
+        # write the fixed-size prefix (header/metadata/chapters/page table),
+        # then copy the spooled page data across verbatim.
+        page_table = bytearray()
+        offset = data_offset
+        for i in range(page_count):
+            page_table += struct.pack(
+                PAGE_TABLE_ENTRY_FMT, offset, page_sizes[i], width, height)
+            offset += page_sizes[i]
+
+        header = struct.pack(
+            HEADER_FMT,
+            XTCH_MAGIC,          # magic
+            1, 0,                # versionMajor, versionMinor
+            page_count,          # pageCount
+            read_direction,      # readDirection
+            1,                   # hasMetadata
+            0,                   # hasThumbnails
+            1 if chapters else 0,  # hasChapters
+            1,                   # currentPage (1-based)
+            TITLE_OFF,           # metadataOffset
+            page_table_off,      # pageTableOffset
+            data_offset,         # dataOffset
+            0,                   # thumbOffset
+            chapter_offset,      # chapterOffset
+            0,                   # padding
+        )
+
+        with open(out_path, "wb") as f:
+            f.write(header)
+            f.write(_build_metadata(title, author, len(chapters)))
+            f.write(chapter_table)
+            f.write(page_table)
+            spool.seek(0)
+            shutil.copyfileobj(spool, f)
+
+    raw_total = sum(_page_data_size(width, height) for _ in page_indices)
+    packed_total = sum(page_sizes)
+    saved_pct = 100 * (1 - packed_total / raw_total) if raw_total else 0
+    print(f"\nWrote {out_path} ({page_count} pages, {len(chapters)} chapters, "
+          f"{packed_total} bytes packed vs {raw_total} raw, {saved_pct:.0f}% smaller)",
           file=sys.stderr)
 
 

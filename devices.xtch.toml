@@ -39,7 +39,7 @@ width = 528
 height = 792
 dpi = 200
 orientation = "portrait"
-font_size = 62
+font_size = 60
 
 [devices.x4]
 label = "Xteink X4"          # 4.3", ~218 PPI
@@ -47,4 +47,4 @@ width = 480
 height = 800
 dpi = 200
 orientation = "portrait"
-font_size = 62
+font_size = 60
