@@ -21,6 +21,7 @@
       "output": "dist",
       "buildResources": "build-resources"
     },
+    "afterPack": "scripts/afterPack.js",
     "files": [
       "src/**/*",
       "renderer/**/*",
