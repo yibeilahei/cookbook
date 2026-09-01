@@ -171,10 +171,58 @@ const RECOMMENDED_FONTS = {
     macos: { serif: "Ayuthaya", sans: "Thonburi", mono: "Thonburi" },
     windows: { serif: "Leelawadee UI", sans: "Leelawadee UI", mono: "Leelawadee UI" },
   },
+  bengali: {
+    macos: { serif: "Kohinoor Bangla", sans: "Kohinoor Bangla", mono: "Kohinoor Bangla" },
+    windows: { serif: "Nirmala UI", sans: "Nirmala UI", mono: "Nirmala UI" },
+  },
+  tamil: {
+    macos: { serif: "Kohinoor Tamil", sans: "Kohinoor Tamil", mono: "Kohinoor Tamil" },
+    windows: { serif: "Nirmala UI", sans: "Nirmala UI", mono: "Nirmala UI" },
+  },
+  telugu: {
+    macos: { serif: "Kohinoor Telugu", sans: "Kohinoor Telugu", mono: "Kohinoor Telugu" },
+    windows: { serif: "Nirmala UI", sans: "Nirmala UI", mono: "Nirmala UI" },
+  },
+  kannada: {
+    macos: { serif: "Kannada Sangam MN", sans: "Kannada Sangam MN", mono: "Kannada Sangam MN" },
+    windows: { serif: "Nirmala UI", sans: "Nirmala UI", mono: "Nirmala UI" },
+  },
+  malayalam: {
+    macos: { serif: "Malayalam Sangam MN", sans: "Malayalam Sangam MN", mono: "Malayalam Sangam MN" },
+    windows: { serif: "Nirmala UI", sans: "Nirmala UI", mono: "Nirmala UI" },
+  },
+  gujarati: {
+    macos: { serif: "Gujarati Sangam MN", sans: "Gujarati Sangam MN", mono: "Gujarati Sangam MN" },
+    windows: { serif: "Nirmala UI", sans: "Nirmala UI", mono: "Nirmala UI" },
+  },
+  gurmukhi: {
+    macos: { serif: "Gurmukhi MN", sans: "Gurmukhi MN", mono: "Gurmukhi MN" },
+    windows: { serif: "Nirmala UI", sans: "Nirmala UI", mono: "Nirmala UI" },
+  },
+  odia: {
+    macos: { serif: "Oriya Sangam MN", sans: "Oriya Sangam MN", mono: "Oriya Sangam MN" },
+    windows: { serif: "Nirmala UI", sans: "Nirmala UI", mono: "Nirmala UI" },
+  },
+  sinhala: {
+    macos: { serif: "Sinhala Sangam MN", sans: "Sinhala Sangam MN", mono: "Sinhala Sangam MN" },
+    windows: { serif: "Nirmala UI", sans: "Nirmala UI", mono: "Nirmala UI" },
+  },
+  myanmar: {
+    macos: { serif: "Myanmar MN", sans: "Myanmar Sangam MN", mono: "Myanmar MN" },
+    windows: { serif: "Myanmar Text", sans: "Myanmar Text", mono: "Myanmar Text" },
+  },
+  ethiopic: {
+    macos: { serif: "Kefa", sans: "Kefa", mono: "Kefa" },
+    windows: { serif: "Nyala", sans: "Nyala", mono: "Nyala" },
+  },
+  khmer: {
+    macos: { serif: "Khmer MN", sans: "Khmer Sangam MN", mono: "Khmer MN" },
+    windows: { serif: "Khmer UI", sans: "Khmer UI", mono: "Khmer UI" },
+  },
   // "Other" is a catch-all for scripts we don't have a curated recommendation
-  // for (e.g. Bengali, Tamil, Armenian, Ethiopic, ...). It falls back to each
-  // OS's default UI font, which has reasonably broad built-in glyph coverage
-  // and font-fallback behavior -- but the user should pick a script-specific
+  // for (e.g. Armenian, Georgian, Cherokee, ...). It falls back to each OS's
+  // default UI font, which has reasonably broad built-in glyph coverage and
+  // font-fallback behavior -- but the user should pick a script-specific
   // font manually below if the default doesn't render their book correctly.
   other: {
     macos: { serif: "Helvetica Neue", sans: "Helvetica Neue", mono: "Menlo" },
@@ -215,13 +263,26 @@ function detectSystemLanguage() {
     return "chinese_simplified";
   }
   if (locale.startsWith("yue")) return "chinese_traditional"; // Cantonese: commonly HK/Traditional
+  if (locale.startsWith("kok")) return "devanagari"; // Konkani -- check before "ko" (Korean) below
   if (locale.startsWith("ko")) return "korean";
-  if (["ru", "uk", "bg", "sr", "mk", "be", "mn", "kk"].some((p) => locale.startsWith(p))) return "cyrillic";
+  if (["ru", "uk", "bg", "sr", "mk", "be", "mn", "kk", "ky", "tt", "tg"].some((p) => locale.startsWith(p))) return "cyrillic";
   if (locale.startsWith("el")) return "greek";
-  if (["ar", "fa", "ur", "ps", "ku", "ug"].some((p) => locale.startsWith(p))) return "arabic";
+  if (["ar", "fa", "ur", "ps", "ku", "ug", "sd", "bal"].some((p) => locale.startsWith(p))) return "arabic";
   if (locale.startsWith("he") || locale.startsWith("iw") || locale.startsWith("yi")) return "hebrew";
-  if (["hi", "mr", "ne", "sa"].some((p) => locale.startsWith(p))) return "devanagari";
+  if (["hi", "mr", "ne", "sa", "bho", "mai", "doi"].some((p) => locale.startsWith(p))) return "devanagari";
   if (locale.startsWith("th")) return "thai";
+  if (locale.startsWith("bn") || locale.startsWith("as")) return "bengali";
+  if (locale.startsWith("ta")) return "tamil";
+  if (locale.startsWith("te")) return "telugu";
+  if (locale.startsWith("kn")) return "kannada";
+  if (locale.startsWith("ml")) return "malayalam";
+  if (locale.startsWith("gu")) return "gujarati";
+  if (locale.startsWith("pa")) return "gurmukhi";
+  if (locale.startsWith("or")) return "odia";
+  if (locale.startsWith("si")) return "sinhala";
+  if (locale.startsWith("my")) return "myanmar";
+  if (locale.startsWith("am") || locale.startsWith("ti")) return "ethiopic";
+  if (locale.startsWith("km")) return "khmer";
   return "latin";
 }
 

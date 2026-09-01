@@ -96,8 +96,12 @@ supersample = 3        # rasterization multiplier before downscaling to the
   `latin` (default; covers English, French, German, Spanish, etc.),
   `japanese`, `chinese_simplified`, `chinese_traditional`, `korean`,
   `cyrillic` (Russian, Ukrainian, etc.), `greek`, `arabic` (also
-  Persian/Urdu/Pashto), `hebrew`, `devanagari` (Hindi, Marathi, etc.), or
-  `thai`. Auto-detected from the system locale by default, and re-detected
+  Persian/Urdu/Pashto), `hebrew`, `devanagari` (Hindi, Marathi, etc.),
+  `thai`, `bengali`, `tamil`, `telugu`, `kannada`, `malayalam`, `gujarati`,
+  `gurmukhi` (Punjabi), `odia`, `sinhala`, `myanmar`, `ethiopic` (Amharic,
+  Tigrinya), `khmer`, or `other` (any script without a curated font preset
+  -- pick fonts manually). Together these cover the scripts used by the
+  world's ~100 most-spoken languages. Auto-detected from the system locale by default, and re-detected
   per-book from its own metadata when a book is added, if possible;
   editable from the in-app Settings panel. Simplified vs. Traditional
   Chinese can't be told apart from Calibre's language metadata alone (it

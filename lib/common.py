@@ -55,6 +55,8 @@ _ASCII_ROMANIZATION_ALIASES = {
 FONT_LANGUAGES = (
     "latin", "japanese", "chinese_simplified", "chinese_traditional",
     "korean", "cyrillic", "greek", "arabic", "hebrew", "devanagari", "thai",
+    "bengali", "tamil", "telugu", "kannada", "malayalam", "gujarati",
+    "gurmukhi", "odia", "sinhala", "myanmar", "ethiopic", "khmer",
     "other",
 )
 
@@ -383,6 +385,9 @@ _BOOK_LANGUAGE_CODES = {
     "bel": "cyrillic", "be": "cyrillic",
     "mon": "cyrillic", "mn": "cyrillic",
     "kaz": "cyrillic", "kk": "cyrillic",
+    "kir": "cyrillic", "ky": "cyrillic",  # Kyrgyz
+    "tat": "cyrillic", "tt": "cyrillic",  # Tatar
+    "tgk": "cyrillic", "tg": "cyrillic",  # Tajik
     # Greek script
     "gre": "greek", "ell": "greek", "el": "greek",
     # Arabic script (Arabic, Persian, Urdu, Pashto, Kurdish-Sorani, Uyghur)
@@ -392,19 +397,58 @@ _BOOK_LANGUAGE_CODES = {
     "pus": "arabic", "ps": "arabic",
     "kur": "arabic", "ku": "arabic",
     "uig": "arabic", "ug": "arabic",
+    "snd": "arabic", "sd": "arabic",      # Sindhi (Perso-Arabic script)
+    "bal": "arabic",                       # Balochi
+    "pnb": "arabic", "lah": "arabic",     # Western Punjabi (Shahmukhi)
     # Hebrew script
     "heb": "hebrew", "he": "hebrew", "iw": "hebrew",
     "yid": "hebrew", "yi": "hebrew",
-    # Devanagari script (Hindi, Marathi, Nepali, Sanskrit)
+    # Devanagari script (Hindi, Marathi, Nepali, Sanskrit, and other
+    # Devanagari-written languages of South Asia)
     "hin": "devanagari", "hi": "devanagari",
     "mar": "devanagari", "mr": "devanagari",
     "nep": "devanagari", "ne": "devanagari",
     "san": "devanagari", "sa": "devanagari",
+    "bho": "devanagari",  # Bhojpuri
+    "mai": "devanagari",  # Maithili
+    "kok": "devanagari",  # Konkani
+    "doi": "devanagari",  # Dogri
+    "mwr": "devanagari",  # Marwari
+    "hne": "devanagari",  # Chhattisgarhi
+    # Bengali script (Bengali, Assamese, Sylheti, Chittagonian)
+    "ben": "bengali", "bn": "bengali",
+    "asm": "bengali", "as": "bengali",
+    "syl": "bengali",
+    "ctg": "bengali",
+    # Tamil script
+    "tam": "tamil", "ta": "tamil",
+    # Telugu script
+    "tel": "telugu", "te": "telugu",
+    # Kannada script
+    "kan": "kannada", "kn": "kannada",
+    # Malayalam script
+    "mal": "malayalam", "ml": "malayalam",
+    # Gujarati script
+    "guj": "gujarati", "gu": "gujarati",
+    # Gurmukhi script (Eastern/Indian Punjabi)
+    "pan": "gurmukhi", "pa": "gurmukhi",
+    # Odia (Oriya) script
+    "ori": "odia", "or": "odia",
+    # Sinhala script
+    "sin": "sinhala", "si": "sinhala",
+    # Myanmar (Burmese) script
+    "bur": "myanmar", "mya": "myanmar", "my": "myanmar",
+    # Ethiopic script (Amharic, Tigrinya)
+    "amh": "ethiopic", "am": "ethiopic",
+    "tir": "ethiopic", "ti": "ethiopic",
+    # Khmer script
+    "khm": "khmer", "km": "khmer",
     # Thai script
     "tha": "thai", "th": "thai",
     # Latin script (default bucket) -- common examples; any other Latin-
-    # script language not listed here just falls through to None (no auto-
-    # apply) but can still be picked manually from the Language dropdown.
+    # script language not listed here just falls through to "other" (no
+    # recommended preset) but can still be picked manually from the
+    # Language dropdown.
     "eng": "latin", "en": "latin",
     "fre": "latin", "fra": "latin", "fr": "latin",
     "ger": "latin", "deu": "latin", "de": "latin",
@@ -442,7 +486,33 @@ _BOOK_LANGUAGE_CODES = {
     "aze": "latin", "az": "latin",
     "uzb": "latin", "uz": "latin",
     "swa": "latin", "sw": "latin",
+    "hau": "latin", "ha": "latin",       # Hausa
+    "yor": "latin", "yo": "latin",       # Yoruba
+    "ibo": "latin", "ig": "latin",       # Igbo
+    "zul": "latin", "zu": "latin",       # Zulu
+    "xho": "latin", "xh": "latin",       # Xhosa
+    "som": "latin", "so": "latin",       # Somali
+    "kin": "latin", "rw": "latin",       # Kinyarwanda
+    "run": "latin", "rn": "latin",       # Rundi/Kirundi
+    "nya": "latin", "ny": "latin",       # Chichewa/Nyanja
+    "jav": "latin", "jv": "latin",       # Javanese
+    "sun": "latin", "su": "latin",       # Sundanese
+    "ceb": "latin",                       # Cebuano
+    "ilo": "latin",                       # Ilocano
+    "que": "latin", "qu": "latin",       # Quechua
+    "hat": "latin", "ht": "latin",       # Haitian Creole
+    "aka": "latin", "ak": "latin",       # Akan
+    "tuk": "latin", "tk": "latin",       # Turkmen
+    "sna": "latin", "sn": "latin",       # Shona
+    "mlg": "latin", "mg": "latin",       # Malagasy
+    "ful": "latin", "ff": "latin",       # Fulfulde/Fula
+    "sot": "latin", "st": "latin",       # Sotho
+    "lin": "latin", "ln": "latin",       # Lingala
+    "wol": "latin", "wo": "latin",       # Wolof
+    "mlt": "latin", "mt": "latin",       # Maltese
+    "ltz": "latin", "lb": "latin",       # Luxembourgish
 }
+
 
 
 def _detect_chinese_script(text: str) -> str | None:
