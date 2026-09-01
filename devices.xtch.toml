@@ -1,22 +1,29 @@
-# Device profiles for toxtch.py. Add or edit entries freely.
+# Device profiles for .xtch mode. Add or edit entries freely (or use the
+# app's "Edit devices..." UI).
 #
 #   width/height  panel native resolution in portrait (pixels). The PDF page
 #                 is sized width x height points so pages fill the screen.
-#   dpi           rasterization DPI before fitting the page to the panel.
+#   supersample   rasterization multiplier used before downscaling the page
+#                 to the panel's pixel size (higher = sharper text/images,
+#                 slower to convert). Not the panel's physical PPI.
 #   orientation   "portrait" or "landscape". Landscape swaps width/height so
 #                 pages are laid out sideways.
-#   font_size     PDF default font size for this device (ebooks only).
 #
 # "default" is the device pre-selected in the interactive menu.
+#
+# font_size is a general setting (not per-device): the PDF default font
+# size Calibre uses when converting ebooks.
 #
 # cjk_language romanizes CJK in .xtch filenames and chapter names:
 #   japanese (default)  Hepburn romaji
 #   chinese             pinyin
 #   korean              hangul (Revised Romanization)
-# Aliases: ja/jp, zh/cn, ko/kr.
+#   none                skip romanization (plain Unidecode fallback only)
+# Aliases: ja/jp, zh/cn, ko/kr, off/no (for none).
 
 default = "x3"
 cjk_language = "japanese"
+font_size = 60
 
 # CJK fonts used when converting ebooks to PDF. Calibre looks these up by
 # family name on the local OS, so each platform has its own table.
@@ -37,14 +44,12 @@ mono = "Consolas"
 label = "Xteink X3"          # 3.7", ~250 PPI
 width = 528
 height = 792
-dpi = 200
+supersample = 3
 orientation = "portrait"
-font_size = 60
 
 [devices.x4]
 label = "Xteink X4"          # 4.3", ~218 PPI
 width = 480
 height = 800
-dpi = 200
+supersample = 3
 orientation = "portrait"
-font_size = 60

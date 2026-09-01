@@ -1,0 +1,63 @@
+name: Build desktop app
+
+# Builds the Electron app for macOS and Windows. PyInstaller doesn't
+# cross-compile, so the Python backend must be frozen separately on each OS
+# before electron-builder packages it in as a resource (see
+# packaging/pyinstaller/backend-server.spec and electron/package.json's
+# "build.extraResources").
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            dist_script: dist:mac
+            artifact_glob: electron/dist/*.dmg
+            artifact_name: cookbook-macos
+          - os: windows-latest
+            dist_script: dist:win
+            artifact_glob: electron/dist/*.exe
+            artifact_name: cookbook-windows
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Freeze the Python backend with PyInstaller
+        run: >
+          pyinstaller packaging/pyinstaller/backend-server.spec
+          --distpath packaging/dist --workpath packaging/build --noconfirm
+
+      - name: Install Electron dependencies
+        working-directory: electron
+        run: npm ci
+
+      - name: Build the Electron app
+        working-directory: electron
+        run: npm run ${{ matrix.dist_script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error

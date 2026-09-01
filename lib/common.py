@@ -1,4 +1,5 @@
-"""Shared helpers for toxtch.py and topdf.py."""
+"""Shared helpers used by the backend (see backend/jobs.py) and the
+lib.pdf2xtch low-level packer CLI."""
 
 from __future__ import annotations
 
@@ -23,14 +24,22 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # How to romanize CJK before ASCII-safe filenames/chapter names.
 # Japanese is the default because Unidecode's CJK table is Mandarin pinyin.
-CJK_LANGUAGES = ("japanese", "chinese", "korean")
+# "none" skips language-specific romanization entirely (plain Unidecode only).
+CJK_LANGUAGES = ("japanese", "chinese", "korean", "none")
 DEFAULT_CJK_LANGUAGE = "japanese"
 _CJK_LANGUAGE_ALIASES = {
     "japanese": "japanese", "ja": "japanese", "jp": "japanese", "jpn": "japanese",
     "chinese": "chinese", "zh": "chinese", "cn": "chinese", "chi": "chinese",
     "zho": "chinese",
     "korean": "korean", "ko": "korean", "kr": "korean", "kor": "korean",
+    "none": "none", "no": "none", "off": "none",
 }
+
+# Languages the Electron UI offers recommended font presets for (see
+# electron/renderer/renderer.js RECOMMENDED_FONTS). Separate from
+# CJK_LANGUAGES above (which is only about filename/chapter romanization)
+# since font recommendations are useful in both .xtch and Panel PDF modes.
+FONT_LANGUAGES = ("japanese", "chinese", "korean", "english")
 
 # Revised Romanization of Hangul (syllable-by-syllable, no sandhi).
 _HANGUL_CHO = (
@@ -144,7 +153,7 @@ def to_ascii(text: str, language: str | None = None) -> str:
         text = _romanize_japanese(text)
     elif language == "chinese":
         text = _romanize_chinese(text)
-    else:
+    elif language == "korean":
         text = _romanize_korean(text)
     return " ".join(unidecode(text).split())
 
@@ -213,16 +222,23 @@ def fonts_for_os(config: dict) -> dict:
     return {k: chosen[k] for k in ("serif", "sans", "mono")}
 
 
-def font_size_for(dev: dict, device: str) -> int:
-    if "font_size" not in dev:
-        sys.exit(f"Device '{device}' is missing font_size in the config file.")
-    return dev["font_size"]
+DEFAULT_FONT_SIZE = 60
+
+
+def font_size_for(config: dict) -> int:
+    """Top-level font_size for this .xtch/pdf config -- a general Setting
+    (like fonts/language), not per-device, so it's read straight off the
+    config rather than the selected device's table."""
+    size = config.get("font_size", DEFAULT_FONT_SIZE)
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        sys.exit(f"Invalid font_size '{size}' in the config file (must be a positive integer).")
+    return size
 
 
 def panel_size(dev: dict, device: str) -> tuple[int, int, int, str]:
-    """Return (width, height, dpi, '{width}x{height}') in the device orientation."""
+    """Return (width, height, supersample, '{width}x{height}') in the device orientation."""
     width, height = dev["width"], dev["height"]
-    dpi = dev.get("dpi", 200)
+    supersample = dev.get("supersample", 3)
     orientation = dev.get("orientation", "portrait")
     if orientation not in ("portrait", "landscape"):
         sys.exit(
@@ -230,7 +246,7 @@ def panel_size(dev: dict, device: str) -> tuple[int, int, int, str]:
             "(use 'portrait' or 'landscape').")
     if orientation == "landscape":
         width, height = height, width
-    return width, height, dpi, f"{width}x{height}"
+    return width, height, supersample, f"{width}x{height}"
 
 
 def _calibre_install_hint() -> str:
@@ -298,6 +314,63 @@ def find_ebook_convert() -> str:
     sys.exit(_calibre_install_hint())
 
 
+def find_ebook_meta() -> str | None:
+    """Locate ebook-meta, Calibre's metadata-reading CLI, which ships
+    alongside ebook-convert in the same install directory. Returns None
+    (never raises) if it can't be found -- language auto-detection from
+    book metadata is a best-effort convenience, not a hard dependency."""
+    env = os.environ.get("EBOOK_META")
+    if env and Path(env).is_file():
+        return env
+
+    exe = shutil.which("ebook-meta") or shutil.which("ebook-meta.exe")
+    if exe:
+        return exe
+
+    try:
+        convert_path = Path(find_ebook_convert())
+    except SystemExit:
+        return None
+    sibling_name = convert_path.name.replace("ebook-convert", "ebook-meta")
+    sibling = convert_path.with_name(sibling_name)
+    return str(sibling) if sibling.is_file() else None
+
+
+# Maps the ISO 639 language codes/names ebook-meta prints (usually 3-letter,
+# e.g. "jpn", "eng", "chi"/"zho", "kor") to our FONT_LANGUAGES buckets.
+_BOOK_LANGUAGE_CODES = {
+    "eng": "english", "en": "english",
+    "jpn": "japanese", "ja": "japanese",
+    "chi": "chinese", "zho": "chinese", "zh": "chinese",
+    "kor": "korean", "ko": "korean",
+}
+
+
+def detect_book_language(path: str) -> str | None:
+    """Best-effort detection of one of FONT_LANGUAGES from a book's own
+    metadata (the "Languages" field ebook-meta reports, when present).
+    Returns None on anything short of a confident match -- missing
+    metadata, an unrecognized/unsupported language, ebook-meta not being
+    installed, or a read error -- so callers can just skip auto-applying
+    a language rather than fail the whole "add files" action."""
+    exe = find_ebook_meta()
+    if not exe:
+        return None
+    try:
+        proc = subprocess.run(
+            [exe, path], capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    for line in proc.stdout.splitlines():
+        if not line.startswith("Languages"):
+            continue
+        _, _, value = line.partition(":")
+        # e.g. "jpn" or "eng, fre" -- first listed language wins.
+        first = value.strip().split(",")[0].strip().lower()
+        return _BOOK_LANGUAGE_CODES.get(first)
+    return None
+
+
 def parse_args(description: str) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
@@ -325,12 +398,33 @@ def expand_inputs(paths) -> list[Path]:
     return inputs
 
 
+_PROGRESS_RE = re.compile(r"^(\d{1,3})%\s*(.*)$")
+
+
+class ConversionCancelled(Exception):
+    """Raised by ebook_to_pdf/pdf2xtch.convert when `should_cancel()` trips
+    mid-job, so backend/jobs.py can stop a batch early and report it as
+    cancelled rather than as a per-file error."""
+
+
 def ebook_to_pdf(ebook_convert, src: Path, pdf: Path, size: str,
-                 fonts: dict, font_size: int) -> None:
+                 fonts: dict, font_size: int, on_progress=None,
+                 should_cancel=None) -> None:
+    """Run ebook-convert, streaming its output.
+
+    Calibre prints lines like "34% Running transforms on e-book..." as it
+    works; when given, `on_progress(percent: int, message: str)` is called
+    for each such line so callers (the Electron backend) can surface live
+    progress instead of just a spinner.
+
+    `should_cancel`, if given, is called as `should_cancel()` after each
+    output line; when it returns truthy, the Calibre subprocess is killed and
+    `ConversionCancelled` is raised.
+    """
     src = src.resolve()
     pdf.parent.mkdir(parents=True, exist_ok=True)
     print(f"Converting: {src} -> {pdf}")
-    subprocess.run(
+    proc = subprocess.Popen(
         [
             ebook_convert, str(src), str(pdf),
             "--custom-size", size,
@@ -348,20 +442,46 @@ def ebook_to_pdf(ebook_convert, src: Path, pdf: Path, size: str,
             "--embed-all-fonts",
             "--subset-embedded-fonts",
         ],
-        check=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
     )
+    lines = []
+    for line in proc.stdout:
+        lines.append(line)
+        print(line, end="")
+        match = _PROGRESS_RE.match(line.strip())
+        if match and on_progress is not None:
+            on_progress(int(match.group(1)), match.group(2) or "Converting to PDF")
+        if should_cancel is not None and should_cancel():
+            proc.kill()
+            proc.wait()
+            raise ConversionCancelled("cancelled")
+    proc.wait()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, proc.args, "".join(lines))
 
 
 def plan_jobs(inputs: list[Path], device: str, ext: str,
               output_dir: Path | None,
-              cjk_language: str | None = None) -> list[tuple[Path, Path, Path]]:
-    """Resolve (src, out_dir, dest) jobs; skip already-PDFs and path collisions."""
+              cjk_language: str | None = None,
+              on_skip=None) -> list[tuple[Path, Path, Path]]:
+    """Resolve (src, out_dir, dest) jobs; skip already-PDFs and path collisions.
+
+    `on_skip`, if given, is called as `on_skip(src, reason)` for each input
+    that isn't turned into a job (instead of printing to stdout/stderr) — used
+    by the Electron backend to report structured skip reasons to the UI.
+    """
+    def skip(src: Path, reason: str) -> None:
+        if on_skip is not None:
+            on_skip(src, reason)
+        else:
+            print(reason, file=sys.stderr if "same output as" in reason else sys.stdout)
+
     jobs: list[tuple[Path, Path, Path]] = []
     seen: dict[Path, Path] = {}
     for src in inputs:
         src = src.resolve()
         if src.suffix.lower() == ".pdf" and ext == "pdf":
-            print(f"Skipping (already PDF): {src}")
+            skip(src, f"Skipping (already PDF): {src}")
             continue
         out_dir = (output_dir or (src.parent / "output")).resolve()
         # .xtch filenames must stay ASCII-safe for the CrossPoint reader's
@@ -370,8 +490,7 @@ def plan_jobs(inputs: list[Path], device: str, ext: str,
         stem = ascii_slug(src.stem, cjk_language) if ext == "xtch" else src.stem
         dest = (out_dir / f"{stem}_{device}.{ext}").resolve()
         if dest in seen:
-            print(f"Skipping (same output as {seen[dest]}): {src} -> {dest}",
-                  file=sys.stderr)
+            skip(src, f"Skipping (same output as {seen[dest]}): {src} -> {dest}")
             continue
         seen[dest] = src
         jobs.append((src, out_dir, dest))

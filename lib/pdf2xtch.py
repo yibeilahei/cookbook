@@ -11,6 +11,7 @@ Dependencies: pymupdf, pillow, numpy  (see requirements.txt)
 """
 
 import argparse
+import io
 import multiprocessing
 import os
 import shutil
@@ -20,17 +21,17 @@ import tempfile
 import zlib
 from concurrent.futures import ProcessPoolExecutor
 
-import fitz  # PyMuPDF
+import pymupdf as fitz  # PyMuPDF; `fitz` is the deprecated alias for this module
 import numpy as np
 from PIL import Image
 
 try:
     from .common import (
-        DEFAULT_CJK_LANGUAGE, ascii_slug, normalize_cjk_language, to_ascii,
+        DEFAULT_CJK_LANGUAGE, ConversionCancelled, ascii_slug, normalize_cjk_language, to_ascii,
     )
 except ImportError:
     from common import (
-        DEFAULT_CJK_LANGUAGE, ascii_slug, normalize_cjk_language, to_ascii,
+        DEFAULT_CJK_LANGUAGE, ConversionCancelled, ascii_slug, normalize_cjk_language, to_ascii,
     )
 
 # Default panel geometry in CrossPoint portrait orientation (X4). The X3 is
@@ -119,15 +120,53 @@ def compress_page(raw: bytes) -> tuple:
     return raw, 0
 
 
-def render_page(page: fitz.Page, dpi: int, width: int, height: int) -> np.ndarray:
-    mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
+def render_page(page: fitz.Page, supersample: int, width: int, height: int) -> np.ndarray:
+    mat = fitz.Matrix(supersample, supersample)
     pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY, alpha=False)
     img = Image.frombytes("L", (pix.width, pix.height), pix.samples)
     canvas = fit_to_panel(img, width, height)
     return np.asarray(canvas, dtype=np.uint8)
 
 
-def _render_page_body(pdf_path: str, page_index: int, dpi: int, width: int,
+def preview_png_bytes(gray: np.ndarray, quantize: bool) -> bytes:
+    """Encode a rendered page (see render_page) as PNG bytes for the UI.
+
+    When `quantize` is true (xtch mode), the same four gray buckets used by
+    quantize_to_xth are applied first, so the preview matches what the
+    e-ink panel will actually show rather than the PDF's full grayscale.
+    """
+    if quantize:
+        arr = np.select(
+            [gray >= 192, gray >= 128, gray >= 64],
+            [255, 170, 85],
+            default=0,
+        ).astype(np.uint8)
+    else:
+        arr = gray
+    buf = io.BytesIO()
+    Image.fromarray(arr, mode="L").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def render_preview(pdf_path: str, supersample: int, width: int, height: int,
+                    max_pages: int, quantize: bool) -> tuple[list, int]:
+    """Render up to `max_pages` pages of `pdf_path` for an in-app preview.
+
+    Returns (png_bytes_per_page, total_page_count). Pages are rendered
+    sequentially (no process pool) since 15-ish pages is fast enough that
+    the pool-spawn overhead wouldn't pay for itself.
+    """
+    with fitz.open(pdf_path) as doc:
+        page_count = doc.page_count
+        n = min(max_pages, page_count) if max_pages > 0 else page_count
+        pages = [
+            preview_png_bytes(render_page(doc.load_page(i), supersample, width, height), quantize)
+            for i in range(n)
+        ]
+    return pages, page_count
+
+
+def _render_page_body(pdf_path: str, page_index: int, supersample: int, width: int,
                       height: int) -> bytes:
     """Render+quantize+compress one page into its "header + body" bytes.
 
@@ -137,7 +176,7 @@ def _render_page_body(pdf_path: str, page_index: int, dpi: int, width: int,
     simple; PyMuPDF opens are cheap relative to rendering a page.
     """
     with fitz.open(pdf_path) as doc:
-        gray = render_page(doc.load_page(page_index), dpi, width, height)
+        gray = render_page(doc.load_page(page_index), supersample, width, height)
     raw = quantize_to_xth(gray)
     body, compression = compress_page(raw)
     page_header = struct.pack(
@@ -201,12 +240,22 @@ def build_chapters(doc: fitz.Document, page_count: int,
 
 
 def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: list,
-                chapters: list, dpi: int, read_direction: int, title: str,
-                author: str, width: int, height: int) -> None:
+                chapters: list, supersample: int, read_direction: int, title: str,
+                author: str, width: int, height: int, *, on_page=None,
+                should_cancel=None) -> None:
     """Write the given 0-based page indices of `doc` to an XTCH container.
 
     `chapters` holds (name, startPage, endPage) 1-based ranges relative to
     `page_indices` (page 1 == page_indices[0]).
+
+    `on_page`, if given, is called as `on_page(n, page_count)` after each
+    page is rendered (1-based `n`), so callers (the Electron backend) can
+    surface live packing progress instead of just a spinner.
+
+    `should_cancel`, if given, is called as `should_cancel()` after each
+    page is rendered; when it returns truthy, remaining work is abandoned
+    and `ConversionCancelled` is raised (no partial file is left behind,
+    since the real output file isn't opened until pass 2, below).
 
     Pages are compressed independently (per-page raw-DEFLATE, falling back to
     raw storage if that doesn't help), so their on-disk size varies. That means
@@ -228,8 +277,9 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
     # temp file so peak memory stays O(1-ish) pages regardless of book length.
     # Pages are independent, so for books past PARALLEL_PAGE_THRESHOLD this is
     # farmed out to a process pool (CPU-bound: rasterize + numpy quantize +
-    # zlib compress). ProcessPoolExecutor.map keeps results in input order, so
-    # the spool is still written page-by-page in the book's natural order.
+    # zlib compress). Futures are submitted (and collected) in page order, so
+    # the spool is still written page-by-page in the book's natural order,
+    # and not-yet-started futures can be dropped on cancellation.
     page_sizes = []
     workers = min(os.cpu_count() or 1, page_count)
     # 64 MiB spool threshold before falling back to a real temp file; either
@@ -237,19 +287,25 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
     with tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024) as spool:
         if workers > 1 and page_count >= PARALLEL_PAGE_THRESHOLD:
             with ProcessPoolExecutor(max_workers=workers) as pool:
-                results = pool.map(
-                    _render_page_body,
-                    [pdf_path] * page_count, page_indices,
-                    [dpi] * page_count, [width] * page_count, [height] * page_count,
-                )
-                for n, page_bytes in enumerate(results):
+                futures = [
+                    pool.submit(_render_page_body, pdf_path, page_index, supersample, width, height)
+                    for page_index in page_indices
+                ]
+                for n, future in enumerate(futures):
+                    page_bytes = future.result()
                     spool.write(page_bytes)
                     page_sizes.append(len(page_bytes))
                     print(f"  page {n + 1}/{page_count}", end="\r",
                           file=sys.stderr, flush=True)
+                    if on_page is not None:
+                        on_page(n + 1, page_count)
+                    if should_cancel is not None and should_cancel():
+                        for pending in futures[n + 1:]:
+                            pending.cancel()
+                        raise ConversionCancelled("cancelled")
         else:
             for n, page_index in enumerate(page_indices):
-                gray = render_page(doc.load_page(page_index), dpi, width, height)
+                gray = render_page(doc.load_page(page_index), supersample, width, height)
                 raw = quantize_to_xth(gray)
                 body, compression = compress_page(raw)
                 page_header = struct.pack(
@@ -259,6 +315,10 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
                 spool.write(body)
                 page_sizes.append(len(page_header) + len(body))
                 print(f"  page {n + 1}/{page_count}", end="\r", file=sys.stderr, flush=True)
+                if on_page is not None:
+                    on_page(n + 1, page_count)
+                if should_cancel is not None and should_cancel():
+                    raise ConversionCancelled("cancelled")
 
         # Pass 2: now that every page's on-disk size is known, compute offsets,
         # write the fixed-size prefix (header/metadata/chapters/page table),
@@ -304,9 +364,10 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
           file=sys.stderr)
 
 
-def convert(pdf_path: str, out_path: str, dpi: int, read_direction: int,
+def convert(pdf_path: str, out_path: str, supersample: int, read_direction: int,
             title: str, author: str, max_pages: int, width: int, height: int,
-            *, cjk_language: str = DEFAULT_CJK_LANGUAGE) -> None:
+            *, cjk_language: str = DEFAULT_CJK_LANGUAGE, on_page=None,
+            should_cancel=None) -> None:
     # XTH planes are column-major with 8 vertical pixels per byte, but the
     # declared dataSize is ((w*h+7)/8)*2; the two only agree when height is a
     # multiple of 8, otherwise every page offset would be wrong.
@@ -328,7 +389,8 @@ def convert(pdf_path: str, out_path: str, dpi: int, read_direction: int,
 
     _write_book(out_path, pdf_path, doc, list(range(page_count)),
                 build_chapters(doc, page_count, cjk_language),
-                dpi, read_direction, title, author, width, height)
+                supersample, read_direction, title, author, width, height, on_page=on_page,
+                should_cancel=should_cancel)
 
 
 def main() -> None:
@@ -342,8 +404,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Convert a PDF to a .xtch book.")
     parser.add_argument("pdf", help="Input PDF path")
     parser.add_argument("-o", "--output", help="Output .xtch path (default: alongside PDF)")
-    parser.add_argument("--dpi", type=int, default=200,
-                        help="Rasterization DPI before fitting to --width x --height (default: 200)")
+    parser.add_argument("--supersample", type=int, default=3,
+                        help="Rasterization supersample multiplier before downscaling to "
+                             "--width x --height (default: 3; higher = sharper but slower)")
     parser.add_argument("--read-direction", type=int, default=0, choices=(0, 1, 2),
                         help="XTCH readDirection byte stored in the header (default: 0)")
     parser.add_argument("--title", default="", help="Override book title metadata")
@@ -357,7 +420,7 @@ def main() -> None:
     parser.add_argument(
         "--cjk-language", default=DEFAULT_CJK_LANGUAGE,
         help="CJK romanization for chapter names and the default output filename: "
-             "japanese (default), chinese, or korean")
+             "japanese (default), chinese, korean, or none (skip romanization)")
     args = parser.parse_args()
     cjk_language = normalize_cjk_language(args.cjk_language)
 
@@ -368,7 +431,7 @@ def main() -> None:
             os.path.splitext(os.path.basename(args.pdf))[0], cjk_language)
         output = os.path.join(os.path.dirname(args.pdf) or ".", stem + XTCH_EXT)
 
-    convert(args.pdf, output, args.dpi, args.read_direction,
+    convert(args.pdf, output, args.supersample, args.read_direction,
             args.title, args.author, args.max_pages, args.width, args.height,
             cjk_language=cjk_language)
 

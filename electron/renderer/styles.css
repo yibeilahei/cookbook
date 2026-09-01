@@ -1,0 +1,187 @@
+:root {
+  --bg: #1e1f22;
+  --panel: #26272b;
+  --border: #3a3b40;
+  --text: #e6e6e6;
+  --muted: #9a9ba0;
+  --accent: #4a90e2;
+  --error: #e25c5c;
+  --ok: #5cb85c;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mode-toggle { display: flex; gap: 4px; }
+.mode-btn {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.mode-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+.banner {
+  background: #4a3a1a;
+  color: #ffd48a;
+  padding: 8px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.banner.hidden { display: none; }
+.banner button { margin-left: 12px; }
+
+main { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 16px; overflow: auto; }
+.view { flex: 1; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
+.columns { flex: 1; display: flex; gap: 16px; overflow: hidden; min-height: 0; }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.row label:not(.switch) { min-width: 90px; color: var(--muted); }
+select, input[type="text"], input[type="number"] {
+  background: #1a1b1e;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 4px;
+  flex: 1;
+}
+button {
+  background: #33343a;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+button:hover { background: #3d3e45; }
+button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+button.primary:hover { background: #5a9ee8; }
+
+.switch { position: relative; display: inline-block; width: 40px; height: 22px; flex: initial; cursor: pointer; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch-slider {
+  position: absolute; inset: 0; background: var(--border);
+  border-radius: 22px; transition: background 0.15s;
+}
+.switch-slider::before {
+  content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px;
+  background: var(--text); border-radius: 50%; transition: transform 0.15s;
+}
+.switch input:checked + .switch-slider { background: var(--ok); }
+.switch input:checked + .switch-slider::before { transform: translateX(18px); }
+.switch input:disabled + .switch-slider { opacity: 0.5; cursor: not-allowed; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.drop-zone.dragover { border-color: var(--accent); color: var(--text); }
+
+.file-list { list-style: none; padding: 0; margin: 0 0 12px 0; overflow: auto; }
+.file-list li {
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap;
+  padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.file-list li button { padding: 2px 8px; }
+
+.hidden { display: none !important; }
+
+.progress-row-name { flex: 1 1 auto; margin-right: 8px; }
+
+.file-progress-track {
+  flex: 1 0 100%; height: 4px; margin-top: 6px;
+  background: var(--border); border-radius: 2px; overflow: hidden;
+}
+.file-progress-fill {
+  height: 100%; width: 0%; background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.batch-progress { margin-bottom: 12px; }
+.batch-progress.hidden { display: none; }
+.batch-progress-bar-track {
+  height: 8px; background: var(--border); border-radius: 4px;
+  overflow: hidden; margin-bottom: 4px;
+}
+.batch-progress-bar-fill {
+  height: 100%; width: 0%; background: var(--accent);
+  transition: width 0.2s ease;
+}
+#batch-progress-text { font-size: 12px; color: var(--muted); }
+
+.status-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+.status-queued { background: #444; color: #ccc; }
+.status-convert, .status-pack { background: #3a5a8a; color: #cfe0ff; }
+.status-done { background: #2f5c2f; color: #baffba; }
+.status-error { background: #6c2f2f; color: #ffbaba; }
+.status-cancelled { background: #6c5a2f; color: #ffe6a8; }
+
+.modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal.hidden { display: none; }
+.modal-content {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px; width: 90%; max-width: 800px; max-height: 80vh; overflow: auto;
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.error { color: var(--error); margin-right: auto; font-size: 13px; }
+.settings-status { color: var(--ok); margin-right: auto; font-size: 13px; }
+
+.preview-modal-content { max-width: 900px; }
+.preview-modal-status { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+.preview-grid {
+  display: flex; flex-wrap: wrap; gap: 12px; max-height: 60vh; overflow: auto;
+  justify-content: center;
+}
+.preview-page {
+  width: 160px; height: auto; border: 1px solid var(--border); border-radius: 2px;
+  background: white;
+}
+
+.settings-hint { color: var(--muted); font-size: 12px; margin: 0 0 10px 0; }
+
+table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+th, td { text-align: left; padding: 4px 6px; font-size: 13px; }
+td input[type="text"], td input[type="number"] {
+  width: 100%; background: #1a1b1e; border: 1px solid var(--border); color: var(--text);
+  padding: 4px; border-radius: 4px;
+}
+td input[type="radio"] { transform: scale(1.2); }

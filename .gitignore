@@ -2,5 +2,9 @@
 __pycache__
 .DS_Store
 
-scripts.txt
-todo*
+# Build artifacts (see packaging/pyinstaller/backend-server.spec and
+# electron/package.json for how to regenerate these; none of it is committed).
+electron/node_modules
+electron/dist
+packaging/build
+packaging/dist

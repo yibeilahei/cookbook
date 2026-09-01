@@ -1,14 +1,18 @@
-# Device profiles for topdf.py. Add or edit entries freely.
+# Device profiles for Panel PDF mode. Add or edit entries freely (or use the
+# app's "Edit devices..." UI).
 #
 #   width/height  panel native resolution in portrait (pixels). The PDF page
 #                 is sized width x height points so pages fill the screen.
 #   orientation   "portrait" or "landscape". Landscape swaps width/height so
 #                 pages are laid out sideways.
-#   font_size     PDF default font size for this device.
 #
 # "default" is the device pre-selected in the interactive menu.
+#
+# font_size is a general setting (not per-device): the PDF default font
+# size Calibre uses when converting ebooks.
 
 default = "kpw11"
+font_size = 120
 
 # CJK fonts used when converting ebooks to PDF. Calibre looks these up by
 # family name on the local OS, so each platform has its own table.
@@ -30,11 +34,9 @@ label = "Kindle Paperwhite 11th"  # 6.8", 300 PPI
 width = 1236
 height = 1648
 orientation = "landscape"
-font_size = 120
 
 [devices.rp1]
 label = "Sony DPT-RP1"       # 13.3", ~207 PPI
 width = 1650
 height = 2200
 orientation = "portrait"
-font_size = 160

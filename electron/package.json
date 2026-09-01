@@ -1,0 +1,49 @@
+{
+  "name": "cookbook-desktop",
+  "version": "0.1.0",
+  "description": "Ebook/PDF -> .xtch / panel-PDF converter (desktop UI over the Python backend)",
+  "author": "cookbook",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^44.1.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "dev.cookbook.desktop",
+    "productName": "Cookbook",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "src/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../packaging/dist/backend-server",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities",
+      "identity": null
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Cookbook — Ebook/PDF Converter</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div class="mode-toggle" role="tablist">
+      <button class="mode-btn active" data-mode="xtch" role="tab" data-i18n="modeXtch">.xtch (eink)</button>
+      <button class="mode-btn" data-mode="pdf" role="tab" data-i18n="modePdf">Panel PDF</button>
+    </div>
+  </header>
+
+  <div id="calibre-banner" class="banner hidden">
+    <span id="calibre-banner-text"></span>
+    <button id="calibre-recheck" data-i18n="recheck">Re-check</button>
+  </div>
+
+  <main>
+    <div id="view-convert" class="view">
+      <div class="columns">
+        <section class="panel">
+          <div class="row">
+            <label for="device-select" data-i18n="device">Device</label>
+            <select id="device-select"></select>
+            <button id="edit-devices-btn" data-i18n="editDevices">Edit devices…</button>
+          </div>
+
+          <div id="drop-zone" class="drop-zone">
+            <p data-i18n="dropzoneText">Drag &amp; drop ebooks/PDFs or folders here</p>
+            <button id="add-files-btn" data-i18n="addFiles">Add files…</button>
+          </div>
+
+          <ul id="file-list" class="file-list"></ul>
+
+          <div class="row">
+            <label for="output-dir" data-i18n="outputFolder">Output folder</label>
+            <input id="output-dir" type="text" data-i18n-placeholder="outputPlaceholder" placeholder="(default: output/ next to each input)" readonly />
+            <button id="pick-output-btn" data-i18n="browse">Browse…</button>
+            <button id="clear-output-btn" data-i18n="useDefault">Use default</button>
+          </div>
+
+          <div id="batch-progress" class="batch-progress hidden">
+            <div class="batch-progress-bar-track">
+              <div id="batch-progress-bar" class="batch-progress-bar-fill"></div>
+            </div>
+            <span id="batch-progress-text"></span>
+          </div>
+
+          <div class="row">
+            <button id="convert-btn" class="primary" data-i18n="convert">Convert</button>
+            <button id="cancel-btn" class="hidden" data-i18n="cancel">Cancel</button>
+            <span id="convert-status"></span>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2><span data-i18n="settingsHeading">Settings</span> (<span id="settings-modal-mode"></span>)</h2>
+
+          <div class="row" id="settings-language-row">
+            <label for="settings-language" data-i18n="language">Language</label>
+            <select id="settings-language">
+              <option value="english" data-i18n="optEnglish">English / Latin</option>
+              <option value="japanese" data-i18n="optJapanese">Japanese</option>
+              <option value="chinese" data-i18n="optChinese">Chinese</option>
+              <option value="korean" data-i18n="optKorean">Korean</option>
+            </select>
+          </div>
+          <p class="settings-hint" data-i18n="languageHint">
+            Detected from your system language by default. Picks recommended
+            fonts below and, in .xtch mode, whether filenames/chapter names
+            get CJK-romanized.
+          </p>
+
+          <div class="row" id="settings-cjk-row">
+            <label for="settings-cjk-romanize" data-i18n="romanizeCjk">Romanize CJK</label>
+            <label class="switch">
+              <input type="checkbox" id="settings-cjk-romanize" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <p class="settings-hint" id="settings-cjk-hint" data-i18n="romanizeHint">
+            Makes .xtch filenames and chapter names ASCII-safe (e.g. Hepburn
+            romaji for Japanese). On by default unless Language is English.
+          </p>
+
+          <h3><span data-i18n="fontsHeading">Fonts</span> (<span id="settings-fonts-os"></span>)</h3>
+          <p class="settings-hint" data-i18n="fontsHint">
+            Used by Calibre when converting ebooks to PDF, so CJK and other
+            non-Latin text renders correctly. Populated from the fonts
+            installed on this computer.
+          </p>
+          <div class="row">
+            <label for="settings-font-serif" data-i18n="fontSerif">Serif</label>
+            <select id="settings-font-serif"></select>
+          </div>
+          <div class="row">
+            <label for="settings-font-sans" data-i18n="fontSans">Sans-serif</label>
+            <select id="settings-font-sans"></select>
+          </div>
+          <div class="row">
+            <label for="settings-font-mono" data-i18n="fontMono">Monospace</label>
+            <select id="settings-font-mono"></select>
+          </div>
+          <div class="row">
+            <label for="settings-font-size" data-i18n="fontSize">Font size</label>
+            <input type="number" id="settings-font-size" min="1" step="1" />
+          </div>
+          <p class="settings-hint" data-i18n="fontSizeHint">
+            Default PDF font size Calibre uses when converting ebooks.
+            Applies across all devices in this mode.
+          </p>
+
+          <div class="modal-actions">
+            <span id="settings-modal-error" class="error"></span>
+            <span id="settings-modal-status" class="settings-status"></span>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <!-- Device editor modal -->
+  <div id="device-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2><span data-i18n="editDevicesHeading">Edit devices</span> (<span id="device-modal-mode"></span>)</h2>
+      <table id="device-table">
+        <thead>
+          <tr>
+            <th data-i18n="colKey">Key</th><th data-i18n="colLabel">Label</th><th data-i18n="colWidth">Width</th><th data-i18n="colHeight">Height</th>
+            <th class="supersample-col" data-i18n="colSupersample">Supersample</th><th data-i18n="colOrientation">Orientation</th>
+            <th data-i18n="colDefault">Default</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="device-table-body"></tbody>
+      </table>
+      <button id="add-device-row-btn" data-i18n="addDeviceRow">+ Add device</button>
+      <div class="modal-actions">
+        <span id="device-modal-error" class="error"></span>
+        <button id="device-modal-cancel" data-i18n="cancel">Cancel</button>
+        <button id="device-modal-save" class="primary" data-i18n="save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview modal -->
+  <div id="preview-modal" class="modal hidden">
+    <div class="modal-content preview-modal-content">
+      <h2 id="preview-modal-title" data-i18n="previewTitle">Preview</h2>
+      <div id="preview-modal-status" class="preview-modal-status"></div>
+      <div id="preview-grid" class="preview-grid"></div>
+      <div class="modal-actions">
+        <button id="preview-modal-close" data-i18n="close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
