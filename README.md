@@ -91,12 +91,35 @@ supersample = 3        # rasterization multiplier before downscaling to the
 ```
 
 - `default` sets which device is pre-selected in that mode's picker.
+- `language` (top-level) is a script-family bucket used to recommend fonts
+  and (in `.xtch` mode) whether CJK-romanization is applicable. One of
+  `latin` (default; covers English, French, German, Spanish, etc.),
+  `japanese`, `chinese_simplified`, `chinese_traditional`, `korean`,
+  `cyrillic` (Russian, Ukrainian, etc.), `greek`, `arabic` (also
+  Persian/Urdu/Pashto), `hebrew`, `devanagari` (Hindi, Marathi, etc.), or
+  `thai`. Auto-detected from the system locale by default, and re-detected
+  per-book from its own metadata when a book is added, if possible;
+  editable from the in-app Settings panel. Simplified vs. Traditional
+  Chinese can't be told apart from Calibre's language metadata alone (it
+  normalizes `zh`, `zh-CN`, `zh-TW`, `zh-Hans`, `zh-Hant`, etc. all down to
+  the same generic code), so per-book auto-detection instead inspects the
+  book's title/author text for script-distinguishing characters; when a
+  title has none (e.g. very short, or spelled the same in both scripts),
+  detection is skipped and the language must be picked manually.
 - `font_size` (top-level, not per-device) is the Calibre PDF default font
   size used when converting ebooks; editable from the in-app Settings panel.
-- `cjk_language` (`.xtch` mode only) controls how CJK in `.xtch` filenames
-  and chapter names is turned into ASCII. `japanese` (default) uses Hepburn
-  romaji, `chinese` uses pinyin, `korean` uses Revised Romanization of
-  hangul, `none` skips romanization (plain Unidecode fallback only).
+- `ascii_romanization` (`.xtch` mode only) controls how CJK in `.xtch`
+  filenames and chapter names is turned into ASCII. `japanese` (default)
+  uses Hepburn romaji, `chinese` uses pinyin (used for both
+  `chinese_simplified` and `chinese_traditional` -- pinyin doesn't depend
+  on which script a book uses), `korean` uses Revised Romanization of
+  hangul, `none` skips this extra pass (every other language, and every
+  script including these three, still always gets a plain Unidecode
+  ASCII-fallback for `.xtch` filenames -- this setting only controls
+  whether a higher-quality Japanese/Chinese/Korean-specific pass runs
+  first). Named for what it controls (ASCII-safety), not a language
+  selection -- it's a byproduct of the `language` setting above, not a
+  separate user-facing language choice.
 - `[fonts.macos]` / `[fonts.windows]` set the CJK fonts used for ebook → PDF
   conversion on each OS. Change these if a family is not installed.
 

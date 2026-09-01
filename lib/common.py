@@ -22,12 +22,17 @@ except ModuleNotFoundError:  # Python < 3.11
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# How to romanize CJK before ASCII-safe filenames/chapter names.
+# Which specialized pre-pass (on top of the universal Unidecode ASCII
+# fallback -- see to_ascii()) to run before ASCII-safe filenames/chapter
+# names are generated. Named for what it controls (ASCII-safe romanization),
+# not for a language selection -- "chinese_simplified"/"chinese_traditional"
+# in FONT_LANGUAGES below both use the "chinese" pass here, since pinyin
+# doesn't depend on which script a book uses.
 # Japanese is the default because Unidecode's CJK table is Mandarin pinyin.
 # "none" skips language-specific romanization entirely (plain Unidecode only).
-CJK_LANGUAGES = ("japanese", "chinese", "korean", "none")
-DEFAULT_CJK_LANGUAGE = "japanese"
-_CJK_LANGUAGE_ALIASES = {
+ASCII_ROMANIZATION_LANGUAGES = ("japanese", "chinese", "korean", "none")
+DEFAULT_ASCII_ROMANIZATION = "japanese"
+_ASCII_ROMANIZATION_ALIASES = {
     "japanese": "japanese", "ja": "japanese", "jp": "japanese", "jpn": "japanese",
     "chinese": "chinese", "zh": "chinese", "cn": "chinese", "chi": "chinese",
     "zho": "chinese",
@@ -36,10 +41,21 @@ _CJK_LANGUAGE_ALIASES = {
 }
 
 # Languages the Electron UI offers recommended font presets for (see
-# electron/renderer/renderer.js RECOMMENDED_FONTS). Separate from
-# CJK_LANGUAGES above (which is only about filename/chapter romanization)
-# since font recommendations are useful in both .xtch and Panel PDF modes.
-FONT_LANGUAGES = ("japanese", "chinese", "korean", "english")
+# electron/renderer/renderer.js RECOMMENDED_FONTS). These are script
+# families, not individual languages -- font choice only really needs to
+# vary by writing system (e.g. French/German/Spanish all work fine with the
+# same Latin font presets), so this small set of buckets covers effectively
+# every language in the world. "latin" is the default/fallback bucket for
+# any language not covered by a more specific one below. Separate from
+# ASCII_ROMANIZATION_LANGUAGES above (which is only about filename/chapter romanization,
+# where Simplified and Traditional both use "chinese" since Pinyin
+# romanization doesn't depend on which script a book is written in) since
+# font recommendations are useful in both .xtch and Panel PDF modes, and
+# Simplified/Traditional Chinese generally want different fonts.
+FONT_LANGUAGES = (
+    "latin", "japanese", "chinese_simplified", "chinese_traditional",
+    "korean", "cyrillic", "greek", "arabic", "hebrew", "devanagari", "thai",
+)
 
 # Revised Romanization of Hangul (syllable-by-syllable, no sandhi).
 _HANGUL_CHO = (
@@ -90,18 +106,18 @@ def load_config(kind: str) -> dict:
         return tomllib.load(f)
 
 
-def normalize_cjk_language(value: str | None) -> str:
-    """Map a config/CLI value to japanese, chinese, or korean."""
-    raw = (value or DEFAULT_CJK_LANGUAGE).strip().lower()
-    lang = _CJK_LANGUAGE_ALIASES.get(raw)
+def normalize_ascii_romanization(value: str | None) -> str:
+    """Map a config/CLI value to japanese, chinese, korean, or none."""
+    raw = (value or DEFAULT_ASCII_ROMANIZATION).strip().lower()
+    lang = _ASCII_ROMANIZATION_ALIASES.get(raw)
     if lang is None:
-        allowed = ", ".join(CJK_LANGUAGES)
-        sys.exit(f"Invalid cjk_language '{value}' (use {allowed}).")
+        allowed = ", ".join(ASCII_ROMANIZATION_LANGUAGES)
+        sys.exit(f"Invalid ascii_romanization '{value}' (use {allowed}).")
     return lang
 
 
-def cjk_language_from_config(config: dict) -> str:
-    return normalize_cjk_language(config.get("cjk_language"))
+def ascii_romanization_from_config(config: dict) -> str:
+    return normalize_ascii_romanization(config.get("ascii_romanization"))
 
 
 def _hepburn(text: str) -> str:
@@ -142,25 +158,26 @@ def _romanize_korean(text: str) -> str:
     return "".join(_romanize_hangul_char(ch) for ch in text)
 
 
-def to_ascii(text: str, language: str | None = None) -> str:
-    """Transliterate text to ASCII using language-specific CJK romanization.
+def to_ascii(text: str, romanization: str | None = None) -> str:
+    """Transliterate text to ASCII, using a specialized CJK romanization
+    pre-pass when requested (see ASCII_ROMANIZATION_LANGUAGES).
 
     Remaining non-ASCII (accents, leftover ideographs, macrons from Hepburn)
     is passed through Unidecode. Whitespace is collapsed.
     """
-    language = normalize_cjk_language(language)
-    if language == "japanese":
+    romanization = normalize_ascii_romanization(romanization)
+    if romanization == "japanese":
         text = _romanize_japanese(text)
-    elif language == "chinese":
+    elif romanization == "chinese":
         text = _romanize_chinese(text)
-    elif language == "korean":
+    elif romanization == "korean":
         text = _romanize_korean(text)
     return " ".join(unidecode(text).split())
 
 
-def ascii_slug(text: str, language: str | None = None) -> str:
+def ascii_slug(text: str, romanization: str | None = None) -> str:
     """ASCII-safe filename stem; 'book' if nothing remains."""
-    return slugify(to_ascii(text, language)) or "book"
+    return slugify(to_ascii(text, romanization)) or "book"
 
 
 def configure_stdio() -> None:
@@ -336,23 +353,125 @@ def find_ebook_meta() -> str | None:
     return str(sibling) if sibling.is_file() else None
 
 
-# Maps the ISO 639 language codes/names ebook-meta prints (usually 3-letter,
-# e.g. "jpn", "eng", "chi"/"zho", "kor") to our FONT_LANGUAGES buckets.
+# Maps the ISO 639 language codes ebook-meta prints (usually 3-letter,
+# e.g. "jpn", "eng", "chi"/"zho", "kor") to our FONT_LANGUAGES script-family
+# buckets. Not every language on Earth is listed individually here (that
+# would be thousands of codes) -- but every major script family is, so any
+# unlisted language sharing one of these scripts can simply be added as one
+# more line. Languages that aren't recognized at all just skip auto-apply
+# (detect_book_language returns None) rather than guessing wrong.
+#
+# Chinese ("chi"/"zho"/"zh"/"yue") is deliberately absent here: Calibre's
+# metadata normalizes zh, zh-CN, zh-TW, zh-Hans, zh-Hant, zh-HK, etc. all
+# down to the same generic "zho" code, so the language code alone can't
+# tell Simplified from Traditional. detect_book_language() below resolves
+# those codes separately by inspecting the book's title/author text with
+# hanzidentifier instead.
+_CHINESE_LANGUAGE_CODES = {"chi", "zho", "zh", "yue"}
+
 _BOOK_LANGUAGE_CODES = {
-    "eng": "english", "en": "english",
+    # Japanese / Korean (specialized romanization + dedicated fonts)
     "jpn": "japanese", "ja": "japanese",
-    "chi": "chinese", "zho": "chinese", "zh": "chinese",
     "kor": "korean", "ko": "korean",
+    # Cyrillic script
+    "rus": "cyrillic", "ru": "cyrillic",
+    "ukr": "cyrillic", "uk": "cyrillic",
+    "bul": "cyrillic", "bg": "cyrillic",
+    "srp": "cyrillic", "sr": "cyrillic",
+    "mkd": "cyrillic", "mk": "cyrillic",
+    "bel": "cyrillic", "be": "cyrillic",
+    "mon": "cyrillic", "mn": "cyrillic",
+    "kaz": "cyrillic", "kk": "cyrillic",
+    # Greek script
+    "gre": "greek", "ell": "greek", "el": "greek",
+    # Arabic script (Arabic, Persian, Urdu, Pashto, Kurdish-Sorani, Uyghur)
+    "ara": "arabic", "ar": "arabic",
+    "per": "arabic", "fas": "arabic", "fa": "arabic",
+    "urd": "arabic", "ur": "arabic",
+    "pus": "arabic", "ps": "arabic",
+    "kur": "arabic", "ku": "arabic",
+    "uig": "arabic", "ug": "arabic",
+    # Hebrew script
+    "heb": "hebrew", "he": "hebrew", "iw": "hebrew",
+    "yid": "hebrew", "yi": "hebrew",
+    # Devanagari script (Hindi, Marathi, Nepali, Sanskrit)
+    "hin": "devanagari", "hi": "devanagari",
+    "mar": "devanagari", "mr": "devanagari",
+    "nep": "devanagari", "ne": "devanagari",
+    "san": "devanagari", "sa": "devanagari",
+    # Thai script
+    "tha": "thai", "th": "thai",
+    # Latin script (default bucket) -- common examples; any other Latin-
+    # script language not listed here just falls through to None (no auto-
+    # apply) but can still be picked manually from the Language dropdown.
+    "eng": "latin", "en": "latin",
+    "fre": "latin", "fra": "latin", "fr": "latin",
+    "ger": "latin", "deu": "latin", "de": "latin",
+    "spa": "latin", "es": "latin",
+    "por": "latin", "pt": "latin",
+    "ita": "latin", "it": "latin",
+    "dut": "latin", "nld": "latin", "nl": "latin",
+    "swe": "latin", "sv": "latin",
+    "nor": "latin", "nob": "latin", "nno": "latin", "no": "latin",
+    "dan": "latin", "da": "latin",
+    "fin": "latin", "fi": "latin",
+    "pol": "latin", "pl": "latin",
+    "cze": "latin", "ces": "latin", "cs": "latin",
+    "slo": "latin", "slk": "latin", "sk": "latin",
+    "hun": "latin", "hu": "latin",
+    "rum": "latin", "ron": "latin", "ro": "latin",
+    "hrv": "latin", "hr": "latin",
+    "slv": "latin", "sl": "latin",
+    "est": "latin", "et": "latin",
+    "lav": "latin", "lv": "latin",
+    "lit": "latin", "lt": "latin",
+    "tur": "latin", "tr": "latin",
+    "ind": "latin", "id": "latin",
+    "may": "latin", "msa": "latin", "ms": "latin",
+    "vie": "latin", "vi": "latin",
+    "tgl": "latin", "fil": "latin", "tl": "latin",
+    "cat": "latin", "ca": "latin",
+    "eus": "latin", "baq": "latin", "eu": "latin",
+    "glg": "latin", "gl": "latin",
+    "ice": "latin", "isl": "latin", "is": "latin",
+    "gle": "latin", "ga": "latin",
+    "wel": "latin", "cym": "latin", "cy": "latin",
+    "afr": "latin", "af": "latin",
+    "alb": "latin", "sqi": "latin", "sq": "latin",
+    "aze": "latin", "az": "latin",
+    "uzb": "latin", "uz": "latin",
+    "swa": "latin", "sw": "latin",
 }
+
+
+def _detect_chinese_script(text: str) -> str | None:
+    """Disambiguate Simplified vs Traditional Chinese from sample text.
+
+    Calibre's "Languages" metadata field can't tell the two apart (see the
+    comment above _CHINESE_LANGUAGE_CODES), so instead we look at the
+    actual characters in the book's title/author metadata using
+    hanzidentifier. Returns None (no auto-apply) when the text has no
+    script-distinguishing characters at all -- e.g. a very short title
+    using only characters shared by both scripts -- same as any other
+    undetectable case."""
+    import hanzidentifier
+    result = hanzidentifier.identify(text)
+    if result == hanzidentifier.SIMPLIFIED:
+        return "chinese_simplified"
+    if result == hanzidentifier.TRADITIONAL:
+        return "chinese_traditional"
+    return None
 
 
 def detect_book_language(path: str) -> str | None:
     """Best-effort detection of one of FONT_LANGUAGES from a book's own
-    metadata (the "Languages" field ebook-meta reports, when present).
-    Returns None on anything short of a confident match -- missing
-    metadata, an unrecognized/unsupported language, ebook-meta not being
-    installed, or a read error -- so callers can just skip auto-applying
-    a language rather than fail the whole "add files" action."""
+    metadata (the "Languages" field ebook-meta reports, when present, plus
+    -- for Chinese -- the Title/Author text to tell Simplified from
+    Traditional). Returns None on anything short of a confident match --
+    missing metadata, an unrecognized/unsupported language, ebook-meta not
+    being installed, or a read error -- so callers can just skip
+    auto-applying a language rather than fail the whole "add files"
+    action."""
     exe = find_ebook_meta()
     if not exe:
         return None
@@ -361,14 +480,24 @@ def detect_book_language(path: str) -> str | None:
             [exe, path], capture_output=True, text=True, timeout=10, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
+    lang_code = None
+    text_fields = []
     for line in proc.stdout.splitlines():
-        if not line.startswith("Languages"):
+        label, sep, value = line.partition(":")
+        if not sep:
             continue
-        _, _, value = line.partition(":")
-        # e.g. "jpn" or "eng, fre" -- first listed language wins.
-        first = value.strip().split(",")[0].strip().lower()
-        return _BOOK_LANGUAGE_CODES.get(first)
-    return None
+        label = label.strip()
+        value = value.strip()
+        if label == "Languages" and lang_code is None:
+            # e.g. "jpn" or "eng, fre" -- first listed language wins.
+            lang_code = value.split(",")[0].strip().lower()
+        elif label in ("Title", "Title sort", "Author(s)"):
+            text_fields.append(value)
+    if lang_code is None:
+        return None
+    if lang_code in _CHINESE_LANGUAGE_CODES:
+        return _detect_chinese_script("\n".join(text_fields))
+    return _BOOK_LANGUAGE_CODES.get(lang_code)
 
 
 def parse_args(description: str) -> argparse.Namespace:
@@ -462,7 +591,7 @@ def ebook_to_pdf(ebook_convert, src: Path, pdf: Path, size: str,
 
 def plan_jobs(inputs: list[Path], device: str, ext: str,
               output_dir: Path | None,
-              cjk_language: str | None = None,
+              ascii_romanization: str | None = None,
               on_skip=None) -> list[tuple[Path, Path, Path]]:
     """Resolve (src, out_dir, dest) jobs; skip already-PDFs and path collisions.
 
@@ -485,9 +614,9 @@ def plan_jobs(inputs: list[Path], device: str, ext: str,
             continue
         out_dir = (output_dir or (src.parent / "output")).resolve()
         # .xtch filenames must stay ASCII-safe for the CrossPoint reader's
-        # filesystem, so romanize CJK (per cjk_language) then slugify.
+        # filesystem, so romanize (per ascii_romanization) then slugify.
         # PDFs keep the original stem.
-        stem = ascii_slug(src.stem, cjk_language) if ext == "xtch" else src.stem
+        stem = ascii_slug(src.stem, ascii_romanization) if ext == "xtch" else src.stem
         dest = (out_dir / f"{stem}_{device}.{ext}").resolve()
         if dest in seen:
             skip(src, f"Skipping (same output as {seen[dest]}): {src} -> {dest}")

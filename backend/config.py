@@ -44,7 +44,12 @@ def load(kind: str) -> dict:
     if not user_path.exists():
         shutil.copyfile(common.config_path(kind), user_path)
     with open(user_path, "rb") as f:
-        return tomllib.load(f)
+        config = tomllib.load(f)
+    # Migrate the old "cjk_language" field name (pre-rename) transparently
+    # so existing on-disk user configs keep working.
+    if "cjk_language" in config and "ascii_romanization" not in config:
+        config["ascii_romanization"] = config.pop("cjk_language")
+    return config
 
 
 def save(kind: str, config: dict) -> None:
@@ -82,9 +87,9 @@ def validate(kind: str, config: dict) -> None:
             raise ValueError(
                 f"devices.{key}.orientation must be 'portrait' or 'landscape'.")
 
-    if kind == "xtch" and config.get("cjk_language") is not None:
+    if kind == "xtch" and config.get("ascii_romanization") is not None:
         try:
-            common.normalize_cjk_language(config["cjk_language"])
+            common.normalize_ascii_romanization(config["ascii_romanization"])
         except SystemExit as e:
             raise ValueError(str(e.code)) from e
 

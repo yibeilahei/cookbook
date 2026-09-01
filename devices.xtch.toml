@@ -14,15 +14,17 @@
 # font_size is a general setting (not per-device): the PDF default font
 # size Calibre uses when converting ebooks.
 #
-# cjk_language romanizes CJK in .xtch filenames and chapter names:
+# ascii_romanization controls how CJK in .xtch filenames and chapter names
+# is transliterated to ASCII (every language always gets a plain Unidecode
+# ASCII fallback regardless -- this only picks a higher-quality pre-pass):
 #   japanese (default)  Hepburn romaji
-#   chinese             pinyin
+#   chinese             pinyin (used for both Simplified and Traditional)
 #   korean              hangul (Revised Romanization)
-#   none                skip romanization (plain Unidecode fallback only)
+#   none                skip the pre-pass (plain Unidecode fallback only)
 # Aliases: ja/jp, zh/cn, ko/kr, off/no (for none).
 
 default = "x3"
-cjk_language = "japanese"
+ascii_romanization = "japanese"
 font_size = 60
 
 # CJK fonts used when converting ebooks to PDF. Calibre looks these up by

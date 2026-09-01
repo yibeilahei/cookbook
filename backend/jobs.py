@@ -48,14 +48,14 @@ def run(kind: str, config: dict, device: str, paths: list[str],
         raise ValueError(f"Unknown device '{device}'.")
     dev = config["devices"][device]
     width, height, supersample, size = common.panel_size(dev, device)
-    cjk_language = common.cjk_language_from_config(config) if kind == "xtch" else None
+    ascii_romanization = common.ascii_romanization_from_config(config) if kind == "xtch" else None
 
     inputs = common.expand_inputs([Path(p) for p in paths])
     out_dir_path = Path(output_dir).resolve() if output_dir else None
 
     skipped: list[dict] = []
     jobs = common.plan_jobs(
-        inputs, device, kind, out_dir_path, cjk_language,
+        inputs, device, kind, out_dir_path, ascii_romanization,
         on_skip=lambda src, reason: skipped.append({"file": str(src), "reason": reason}))
 
     done: list[dict] = []
@@ -111,7 +111,7 @@ def run(kind: str, config: dict, device: str, paths: list[str],
                 from lib.pdf2xtch import convert as pack_xtch
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 pack_xtch(str(pdf.resolve()), str(dest), supersample, 0, "", "", 0,
-                          width, height, cjk_language=cjk_language, on_page=_pack_progress,
+                          width, height, ascii_romanization=ascii_romanization, on_page=_pack_progress,
                           should_cancel=should_cancel)
             else:  # kind == "pdf"
                 if fonts is None:

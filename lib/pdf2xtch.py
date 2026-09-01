@@ -27,11 +27,11 @@ from PIL import Image
 
 try:
     from .common import (
-        DEFAULT_CJK_LANGUAGE, ConversionCancelled, ascii_slug, normalize_cjk_language, to_ascii,
+        DEFAULT_ASCII_ROMANIZATION, ConversionCancelled, ascii_slug, normalize_ascii_romanization, to_ascii,
     )
 except ImportError:
     from common import (
-        DEFAULT_CJK_LANGUAGE, ConversionCancelled, ascii_slug, normalize_cjk_language, to_ascii,
+        DEFAULT_ASCII_ROMANIZATION, ConversionCancelled, ascii_slug, normalize_ascii_romanization, to_ascii,
     )
 
 # Default panel geometry in CrossPoint portrait orientation (X4). The X3 is
@@ -212,7 +212,7 @@ def _build_metadata(title: str, author: str, chapter_count: int) -> bytes:
 
 
 def build_chapters(doc: fitz.Document, page_count: int,
-                   cjk_language: str = DEFAULT_CJK_LANGUAGE) -> list:
+                   ascii_romanization: str = DEFAULT_ASCII_ROMANIZATION) -> list:
     """Extract (name, startPage, endPage) 1-based ranges from the PDF outline.
 
     Pages are stored 1-based; the device decrements them to a 0-based index.
@@ -226,7 +226,7 @@ def build_chapters(doc: fitz.Document, page_count: int,
         # Chapter names are stored in a fixed-size, null-terminated field the
         # device reads as plain text, so transliterate to ASCII (e.g. CJK/
         # accented titles) rather than risk mojibake on the reader.
-        name = to_ascii(title.strip(), cjk_language)
+        name = to_ascii(title.strip(), ascii_romanization)
         if name:
             entries.append((name, page))
     entries.sort(key=lambda e: e[1])
@@ -366,7 +366,7 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
 
 def convert(pdf_path: str, out_path: str, supersample: int, read_direction: int,
             title: str, author: str, max_pages: int, width: int, height: int,
-            *, cjk_language: str = DEFAULT_CJK_LANGUAGE, on_page=None,
+            *, ascii_romanization: str = DEFAULT_ASCII_ROMANIZATION, on_page=None,
             should_cancel=None) -> None:
     # XTH planes are column-major with 8 vertical pixels per byte, but the
     # declared dataSize is ((w*h+7)/8)*2; the two only agree when height is a
@@ -388,7 +388,7 @@ def convert(pdf_path: str, out_path: str, supersample: int, read_direction: int,
     author = author or meta.get("author") or ""
 
     _write_book(out_path, pdf_path, doc, list(range(page_count)),
-                build_chapters(doc, page_count, cjk_language),
+                build_chapters(doc, page_count, ascii_romanization),
                 supersample, read_direction, title, author, width, height, on_page=on_page,
                 should_cancel=should_cancel)
 
@@ -418,22 +418,22 @@ def main() -> None:
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT,
                         help=f"Panel height in portrait orientation (default: {DEFAULT_HEIGHT}; X3: 792)")
     parser.add_argument(
-        "--cjk-language", default=DEFAULT_CJK_LANGUAGE,
-        help="CJK romanization for chapter names and the default output filename: "
+        "--ascii-romanization", default=DEFAULT_ASCII_ROMANIZATION,
+        help="Romanization pass for chapter names and the default output filename: "
              "japanese (default), chinese, korean, or none (skip romanization)")
     args = parser.parse_args()
-    cjk_language = normalize_cjk_language(args.cjk_language)
+    ascii_romanization = normalize_ascii_romanization(args.ascii_romanization)
 
     if args.output:
         output = args.output
     else:
         stem = ascii_slug(
-            os.path.splitext(os.path.basename(args.pdf))[0], cjk_language)
+            os.path.splitext(os.path.basename(args.pdf))[0], ascii_romanization)
         output = os.path.join(os.path.dirname(args.pdf) or ".", stem + XTCH_EXT)
 
     convert(args.pdf, output, args.supersample, args.read_direction,
             args.title, args.author, args.max_pages, args.width, args.height,
-            cjk_language=cjk_language)
+            ascii_romanization=ascii_romanization)
 
 
 if __name__ == "__main__":

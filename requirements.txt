@@ -7,3 +7,4 @@ Unidecode>=1.3
 python-slugify>=8.0
 pykakasi>=2.2
 pypinyin>=0.51
+hanzidentifier>=1.3

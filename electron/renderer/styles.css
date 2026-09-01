@@ -117,7 +117,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   display: flex; justify-content: space-between; align-items: center;
   flex-wrap: wrap;
   padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 13px;
+  cursor: pointer;
 }
+.file-list li.selected { background: rgba(74, 144, 226, 0.18); }
 .file-list li button { padding: 2px 8px; }
 
 .hidden { display: none !important; }

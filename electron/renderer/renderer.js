@@ -6,6 +6,8 @@ const state = {
   inputs: [], // resolved file paths (strings)
   outputDir: null,
   converting: false,
+  detectedLanguages: {}, // file path -> detected FONT_LANGUAGES bucket | null, cached from detect_language
+  selectedFile: null, // path currently selected in the file list, for the Settings-panel preview below
 };
 
 const el = (id) => document.getElementById(id);
@@ -114,13 +116,18 @@ async function saveDeviceModal() {
 
 // ------------------------------------------------------------------ settings --
 
-// Recommended serif/sans/mono presets per language, per OS. Purely a UI
-// convenience for pre-filling the font dropdowns below -- users can always
-// override any individual font before saving.
 const DEFAULT_FONT_SIZE = 60;
 
+// Recommended serif/sans/mono presets per language bucket, per OS. Purely a
+// UI convenience for pre-filling the font dropdowns below -- users can
+// always override any individual font before saving. Buckets are script
+// families (not individual languages): e.g. French/German/Spanish all use
+// the "latin" preset, since font choice only really needs to vary by
+// writing system. Fonts listed here are ones that ship by default on each
+// OS; if one happens to be missing on a given machine it's simply added as
+// a manually-set option (see populateFontSelect) rather than breaking.
 const RECOMMENDED_FONTS = {
-  english: {
+  latin: {
     macos: { serif: "Times New Roman", sans: "Helvetica", mono: "Menlo" },
     windows: { serif: "Times New Roman", sans: "Arial", mono: "Consolas" },
   },
@@ -128,24 +135,85 @@ const RECOMMENDED_FONTS = {
     macos: { serif: "Hiragino Mincho ProN", sans: "Hiragino Sans", mono: "Menlo" },
     windows: { serif: "Yu Mincho", sans: "Yu Gothic", mono: "Consolas" },
   },
-  chinese: {
+  chinese_simplified: {
     macos: { serif: "Songti SC", sans: "PingFang SC", mono: "Menlo" },
     windows: { serif: "SimSun", sans: "Microsoft YaHei", mono: "Consolas" },
+  },
+  chinese_traditional: {
+    macos: { serif: "Songti TC", sans: "PingFang TC", mono: "Menlo" },
+    windows: { serif: "PMingLiU", sans: "Microsoft JhengHei", mono: "Consolas" },
   },
   korean: {
     macos: { serif: "AppleMyungjo", sans: "Apple SD Gothic Neo", mono: "Menlo" },
     windows: { serif: "Batang", sans: "Malgun Gothic", mono: "Consolas" },
   },
+  cyrillic: {
+    macos: { serif: "Times New Roman", sans: "Helvetica", mono: "Menlo" },
+    windows: { serif: "Times New Roman", sans: "Arial", mono: "Consolas" },
+  },
+  greek: {
+    macos: { serif: "Times New Roman", sans: "Helvetica", mono: "Menlo" },
+    windows: { serif: "Times New Roman", sans: "Arial", mono: "Consolas" },
+  },
+  arabic: {
+    macos: { serif: "Al Bayan", sans: "Geeza Pro", mono: "Geeza Pro" },
+    windows: { serif: "Tahoma", sans: "Tahoma", mono: "Consolas" },
+  },
+  hebrew: {
+    macos: { serif: "New Peninim MT", sans: "Arial Hebrew", mono: "Arial Hebrew" },
+    windows: { serif: "David", sans: "Arial", mono: "Consolas" },
+  },
+  devanagari: {
+    macos: { serif: "Devanagari Sangam MN", sans: "Devanagari Sangam MN", mono: "Devanagari Sangam MN" },
+    windows: { serif: "Mangal", sans: "Mangal", mono: "Mangal" },
+  },
+  thai: {
+    macos: { serif: "Ayuthaya", sans: "Thonburi", mono: "Thonburi" },
+    windows: { serif: "Leelawadee UI", sans: "Leelawadee UI", mono: "Leelawadee UI" },
+  },
 };
 
-/** Map the browser/OS locale (e.g. "ja-JP", "zh-Hant", "en-US") to one of
- *  the language buckets above, defaulting to "english". */
+// Only Japanese/Chinese/Korean have a specialized ASCII-romanization pass
+// (Hepburn romaji, pinyin, Hangul romanization) layered on top of the
+// universal Unidecode fallback that all .xtch filenames/chapter names
+// always get regardless of language -- so the "Romanize" toggle is only
+// meaningful (and only shown enabled) for these buckets. Simplified and
+// Traditional Chinese are separate font buckets (see RECOMMENDED_FONTS) but
+// share the same Pinyin romanization pass, since pinyin doesn't depend on
+// script.
+const ASCII_ROMANIZATION_LANGUAGES = ["japanese", "chinese_simplified", "chinese_traditional", "korean"];
+
+/** The backend's ascii_romanization config field only ever accepts
+ *  "japanese", "chinese", "korean", or "none" (see lib/common.py
+ *  ASCII_ROMANIZATION_LANGUAGES) -- Simplified and Traditional Chinese both
+ *  map to the plain "chinese" romanization pass. */
+function asciiRomanizationFor(language) {
+  if (language === "chinese_simplified" || language === "chinese_traditional") return "chinese";
+  return language;
+}
+
+/** Map the browser/OS locale (e.g. "ja-JP", "zh-Hant", "ru-RU", "ar-EG") to
+ *  one of the language buckets above, defaulting to "latin". */
 function detectSystemLanguage() {
   const locale = (navigator.language || "en").toLowerCase();
   if (locale.startsWith("ja")) return "japanese";
-  if (locale.startsWith("zh")) return "chinese";
+  if (locale.startsWith("zh")) {
+    // Traditional: zh-Hant*, zh-TW, zh-HK, zh-MO. Everything else
+    // (zh-Hans*, zh-CN, zh-SG, bare "zh") defaults to Simplified.
+    if (locale.includes("hant") || locale.includes("-tw") || locale.includes("-hk") || locale.includes("-mo")) {
+      return "chinese_traditional";
+    }
+    return "chinese_simplified";
+  }
+  if (locale.startsWith("yue")) return "chinese_traditional"; // Cantonese: commonly HK/Traditional
   if (locale.startsWith("ko")) return "korean";
-  return "english";
+  if (["ru", "uk", "bg", "sr", "mk", "be", "mn", "kk"].some((p) => locale.startsWith(p))) return "cyrillic";
+  if (locale.startsWith("el")) return "greek";
+  if (["ar", "fa", "ur", "ps", "ku", "ug"].some((p) => locale.startsWith(p))) return "arabic";
+  if (locale.startsWith("he") || locale.startsWith("iw") || locale.startsWith("yi")) return "hebrew";
+  if (["hi", "mr", "ne", "sa"].some((p) => locale.startsWith(p))) return "devanagari";
+  if (locale.startsWith("th")) return "thai";
+  return "latin";
 }
 
 let systemFontsCache = null; // {family, display}[], memoized after first successful fetch
@@ -185,6 +253,7 @@ function populateFontSelect(selectEl, fonts, current) {
 
 async function refreshSettingsView() {
   el("settings-modal-error").textContent = "";
+  el("settings-modal-status").textContent = "";
   el("settings-modal-mode").textContent = state.mode === "xtch" ? t("modeLabelXtch") : t("modeLabelPdf");
   const config = await window.backend.call("get_config", { kind: state.mode });
   state.config[state.mode] = config;
@@ -192,11 +261,12 @@ async function refreshSettingsView() {
   const language = config.language || detectSystemLanguage();
   el("settings-language").value = language;
 
-  el("settings-cjk-row").classList.toggle("hidden", state.mode !== "xtch");
-  const romanize = config.cjk_language != null
-    ? config.cjk_language !== "none"
-    : language !== "english"; // default: on unless English
-  setCjkRomanizeToggle(language, romanize);
+  el("settings-romanize-row").classList.toggle("hidden", state.mode !== "xtch");
+  el("settings-romanize-hint").classList.toggle("hidden", state.mode !== "xtch");
+  const romanize = config.ascii_romanization != null
+    ? config.ascii_romanization !== "none"
+    : ASCII_ROMANIZATION_LANGUAGES.includes(language); // default: on for Japanese/Chinese/Korean
+  setRomanizeToggle(language, romanize);
 
   const fontsKey = window.platform.fontsKey; // "macos" | "windows", from preload.js
   el("settings-fonts-os").textContent = fontsKey === "windows" ? t("fontsOsWindows") : t("fontsOsMacos");
@@ -209,13 +279,14 @@ async function refreshSettingsView() {
   el("settings-font-size").value = config.font_size || DEFAULT_FONT_SIZE;
 }
 
-/** English has no CJK to romanize, so the toggle is forced off & disabled
- *  in that case; otherwise it reflects `romanize`. */
-function setCjkRomanizeToggle(language, romanize) {
-  const checkbox = el("settings-cjk-romanize");
-  const isCjk = language !== "english";
-  checkbox.disabled = !isCjk;
-  checkbox.checked = isCjk && romanize;
+/** Only Japanese/Chinese/Korean have a specialized romanization pass, so
+ *  the toggle is forced off & disabled for every other language; otherwise
+ *  it reflects `romanize`. */
+function setRomanizeToggle(language, romanize) {
+  const checkbox = el("settings-romanize-toggle");
+  const isRomanizable = ASCII_ROMANIZATION_LANGUAGES.includes(language);
+  checkbox.disabled = !isRomanizable;
+  checkbox.checked = isRomanizable && romanize;
 }
 
 /** Fill the serif/sans/mono selects with this language's recommended fonts
@@ -223,7 +294,7 @@ function setCjkRomanizeToggle(language, romanize) {
  *  triggers a save on change, so keep the resulting font values in sync). */
 function applyRecommendedFonts(language) {
   const fontsKey = window.platform.fontsKey;
-  const preset = RECOMMENDED_FONTS[language] || RECOMMENDED_FONTS.english;
+  const preset = RECOMMENDED_FONTS[language] || RECOMMENDED_FONTS.latin;
   const recommended = preset[fontsKey] || preset.macos;
   const systemFonts = systemFontsCache || [];
   populateFontSelect(el("settings-font-serif"), systemFonts, recommended.serif);
@@ -257,15 +328,13 @@ async function saveSettingsModal() {
     };
     const language = el("settings-language").value;
     if (state.mode === "xtch") {
-      const romanize = el("settings-cjk-romanize").checked;
-      updated.cjk_language = (language !== "english" && romanize) ? language : "none";
+      const romanize = el("settings-romanize-toggle").checked;
+      updated.ascii_romanization = (ASCII_ROMANIZATION_LANGUAGES.includes(language) && romanize) ? asciiRomanizationFor(language) : "none";
     }
     updated.language = language;
 
     await window.backend.call("save_config", { kind: state.mode, config: updated });
     state.config[state.mode] = updated;
-    el("settings-modal-status").textContent = t("saved");
-    setTimeout(() => { el("settings-modal-status").textContent = ""; }, 2000);
   } catch (err) {
     el("settings-modal-error").textContent = err.message;
   }
@@ -289,10 +358,21 @@ async function addPaths(paths) {
 // adding a big directory doesn't stall on dozens of ebook-meta calls.
 const LANGUAGE_DETECT_MAX_FILES = 20;
 
+/** e.g. "chinese_simplified" -> "langNameChineseSimplified" */
+function langNameKey(language) {
+  return "langName" + language
+    .split("_")
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join("");
+}
+
 /** Best-effort: detect the language of newly-added books from their own
  *  metadata and, if there's a clear majority, apply it to the current
  *  mode's Language setting (updating fonts/romanization + auto-saving),
- *  the same as if the user had picked it from the dropdown themselves. */
+ *  the same as if the user had picked it from the dropdown themselves.
+ *  Also caches each file's own detected language (state.detectedLanguages)
+ *  so selecting an individual book in the list can preview its own
+ *  settings even when it differs from the applied majority. */
 async function detectAndApplyLanguage(newFiles) {
   const sample = newFiles.slice(0, LANGUAGE_DETECT_MAX_FILES);
   let languages;
@@ -301,6 +381,8 @@ async function detectAndApplyLanguage(newFiles) {
   } catch (err) {
     return; // best-effort -- ebook-meta missing/failed is not an error for the user
   }
+  Object.assign(state.detectedLanguages, languages);
+
   const counts = {};
   for (const lang of Object.values(languages)) {
     if (lang) counts[lang] = (counts[lang] || 0) + 1;
@@ -313,11 +395,50 @@ async function detectAndApplyLanguage(newFiles) {
 
   el("settings-language").value = detected;
   applyRecommendedFonts(detected);
-  setCjkRomanizeToggle(detected, true);
+  setRomanizeToggle(detected, true);
   await saveSettingsModal();
-  const langNameKey = `langName${detected[0].toUpperCase()}${detected.slice(1)}`;
-  el("settings-modal-status").textContent = t("detectedApplied", { lang: t(langNameKey) });
+  el("settings-modal-status").textContent = t("detectedApplied", { lang: t(langNameKey(detected)) });
   setTimeout(() => { el("settings-modal-status").textContent = ""; }, 4000);
+}
+
+/** Select a file in the list and preview its own detected language in the
+ *  Settings panel (dropdown + recommended fonts + romanize toggle), without
+ *  saving -- this is just a look at what that specific book's settings
+ *  would be, since conversion still applies one shared config to every
+ *  book in the batch. Clicking the already-selected file deselects it and
+ *  reverts the panel to the actually-saved config. */
+async function selectFile(path) {
+  if (state.selectedFile === path) {
+    state.selectedFile = null;
+    renderFileList();
+    await refreshSettingsView();
+    return;
+  }
+  state.selectedFile = path;
+  renderFileList();
+
+  el("settings-modal-status").textContent = "";
+  let language = state.detectedLanguages[path];
+  if (language === undefined) {
+    try {
+      ({ languages: { [path]: language } } = await window.backend.call("detect_language", { paths: [path] }));
+    } catch (err) {
+      language = null;
+    }
+    state.detectedLanguages[path] = language ?? null;
+  }
+  if (state.selectedFile !== path) return; // a newer selection/render happened meanwhile
+
+  const name = path.split(/[\\/]/).pop();
+  if (language) {
+    el("settings-language").value = language;
+    applyRecommendedFonts(language);
+    setRomanizeToggle(language, true);
+    el("settings-modal-status").textContent =
+      t("previewingFile", { file: name, lang: t(langNameKey(language)) });
+  } else {
+    el("settings-modal-status").textContent = t("previewingFileUnknown", { file: name });
+  }
 }
 
 function renderFileList() {
@@ -326,19 +447,24 @@ function renderFileList() {
   for (const path of state.inputs) {
     const li = document.createElement("li");
     li.dataset.file = path;
+    if (path === state.selectedFile) li.classList.add("selected");
     const name = path.split(/[\\/]/).pop();
     li.innerHTML =
       `<span class="progress-row-name" title="${path}">${name}</span>` +
       `<span class="status-badge"></span>` +
       `<div class="file-progress-track"><div class="file-progress-fill"></div></div>`;
+    li.addEventListener("click", () => selectFile(path));
     const previewBtn = document.createElement("button");
     previewBtn.textContent = t("previewBtn");
-    previewBtn.addEventListener("click", () => openPreview(path));
+    previewBtn.addEventListener("click", (e) => { e.stopPropagation(); openPreview(path); });
     li.appendChild(previewBtn);
     const btn = document.createElement("button");
     btn.textContent = "✕";
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       state.inputs = state.inputs.filter((p) => p !== path);
+      if (state.selectedFile === path) state.selectedFile = null;
+      delete state.detectedLanguages[path];
       renderFileList();
     });
     li.appendChild(btn);
@@ -511,7 +637,9 @@ async function checkCalibre() {
 
 function setMode(mode) {
   state.mode = mode;
+  state.selectedFile = null;
   document.querySelectorAll(".mode-btn").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  renderFileList();
   refreshDeviceSelect();
   refreshSettingsView();
 }
@@ -561,7 +689,7 @@ function init() {
   el("device-modal-cancel").addEventListener("click", () => el("device-modal").classList.add("hidden"));
 
   // Settings auto-save on every change -- no explicit Save button.
-  el("settings-cjk-romanize").addEventListener("change", saveSettingsModal);
+  el("settings-romanize-toggle").addEventListener("change", saveSettingsModal);
   el("settings-font-serif").addEventListener("change", saveSettingsModal);
   el("settings-font-sans").addEventListener("change", saveSettingsModal);
   el("settings-font-mono").addEventListener("change", saveSettingsModal);
@@ -569,7 +697,7 @@ function init() {
   el("settings-language").addEventListener("change", (e) => {
     const language = e.target.value;
     applyRecommendedFonts(language);
-    setCjkRomanizeToggle(language, true); // default: on when switching to a CJK language
+    setRomanizeToggle(language, true); // default: on when switching to a CJK language
     saveSettingsModal();
   });
 

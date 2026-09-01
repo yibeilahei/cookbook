@@ -8,8 +8,8 @@
 <body>
   <header>
     <div class="mode-toggle" role="tablist">
-      <button class="mode-btn active" data-mode="xtch" role="tab" data-i18n="modeXtch">.xtch (eink)</button>
-      <button class="mode-btn" data-mode="pdf" role="tab" data-i18n="modePdf">Panel PDF</button>
+      <button class="mode-btn active" data-mode="xtch" role="tab" data-i18n="modeXtch">.xtch</button>
+      <button class="mode-btn" data-mode="pdf" role="tab" data-i18n="modePdf">.pdf</button>
     </div>
   </header>
 
@@ -62,35 +62,44 @@
           <div class="row" id="settings-language-row">
             <label for="settings-language" data-i18n="language">Language</label>
             <select id="settings-language">
-              <option value="english" data-i18n="optEnglish">English / Latin</option>
+              <option value="latin" data-i18n="optLatin">Latin (default)</option>
               <option value="japanese" data-i18n="optJapanese">Japanese</option>
-              <option value="chinese" data-i18n="optChinese">Chinese</option>
+              <option value="chinese_simplified" data-i18n="optChineseSimplified">Chinese (Simplified)</option>
+              <option value="chinese_traditional" data-i18n="optChineseTraditional">Chinese (Traditional)</option>
               <option value="korean" data-i18n="optKorean">Korean</option>
+              <option value="cyrillic" data-i18n="optCyrillic">Cyrillic (Russian, etc.)</option>
+              <option value="greek" data-i18n="optGreek">Greek</option>
+              <option value="arabic" data-i18n="optArabic">Arabic</option>
+              <option value="hebrew" data-i18n="optHebrew">Hebrew</option>
+              <option value="devanagari" data-i18n="optDevanagari">Devanagari (Hindi, etc.)</option>
+              <option value="thai" data-i18n="optThai">Thai</option>
             </select>
           </div>
           <p class="settings-hint" data-i18n="languageHint">
             Detected from your system language by default. Picks recommended
             fonts below and, in .xtch mode, whether filenames/chapter names
-            get CJK-romanized.
+            get romanized for readability.
           </p>
 
-          <div class="row" id="settings-cjk-row">
-            <label for="settings-cjk-romanize" data-i18n="romanizeCjk">Romanize CJK</label>
+          <div class="row" id="settings-romanize-row">
+            <label for="settings-romanize-toggle" data-i18n="romanizeLabel">Romanization</label>
             <label class="switch">
-              <input type="checkbox" id="settings-cjk-romanize" />
+              <input type="checkbox" id="settings-romanize-toggle" />
               <span class="switch-slider"></span>
             </label>
           </div>
-          <p class="settings-hint" id="settings-cjk-hint" data-i18n="romanizeHint">
-            Makes .xtch filenames and chapter names ASCII-safe (e.g. Hepburn
-            romaji for Japanese). On by default unless Language is English.
+          <p class="settings-hint" id="settings-romanize-hint" data-i18n="romanizeHint">
+            Makes .xtch filenames and chapter names ASCII-safe using proper
+            Japanese/Chinese/Korean romanization (e.g. Hepburn romaji). On by
+            default for those languages; not applicable otherwise (other
+            scripts are already made ASCII-safe automatically).
           </p>
 
           <h3><span data-i18n="fontsHeading">Fonts</span> (<span id="settings-fonts-os"></span>)</h3>
           <p class="settings-hint" data-i18n="fontsHint">
-            Used by Calibre when converting ebooks to PDF, so CJK and other
-            non-Latin text renders correctly. Populated from the fonts
-            installed on this computer.
+            Used by Calibre when converting ebooks to PDF, so Chinese,
+            Japanese, Korean, and other non-Latin text renders correctly.
+            Populated from the fonts installed on this computer.
           </p>
           <div class="row">
             <label for="settings-font-serif" data-i18n="fontSerif">Serif</label>
