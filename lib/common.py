@@ -55,6 +55,7 @@ _ASCII_ROMANIZATION_ALIASES = {
 FONT_LANGUAGES = (
     "latin", "japanese", "chinese_simplified", "chinese_traditional",
     "korean", "cyrillic", "greek", "arabic", "hebrew", "devanagari", "thai",
+    "other",
 )
 
 # Revised Romanization of Hangul (syllable-by-syllable, no sandhi).
@@ -467,11 +468,12 @@ def detect_book_language(path: str) -> str | None:
     """Best-effort detection of one of FONT_LANGUAGES from a book's own
     metadata (the "Languages" field ebook-meta reports, when present, plus
     -- for Chinese -- the Title/Author text to tell Simplified from
-    Traditional). Returns None on anything short of a confident match --
-    missing metadata, an unrecognized/unsupported language, ebook-meta not
-    being installed, or a read error -- so callers can just skip
-    auto-applying a language rather than fail the whole "add files"
-    action."""
+    Traditional). Returns None when there's nothing to go on at all --
+    missing metadata, ebook-meta not being installed, or a read error --
+    so callers can just skip auto-applying a language rather than fail the
+    whole "add files" action. Returns "other" when the book does have a
+    language code, just not one of the specific scripts recognized above,
+    so callers can still tell the user something was detected."""
     exe = find_ebook_meta()
     if not exe:
         return None
@@ -497,7 +499,7 @@ def detect_book_language(path: str) -> str | None:
         return None
     if lang_code in _CHINESE_LANGUAGE_CODES:
         return _detect_chinese_script("\n".join(text_fields))
-    return _BOOK_LANGUAGE_CODES.get(lang_code)
+    return _BOOK_LANGUAGE_CODES.get(lang_code, "other")
 
 
 def parse_args(description: str) -> argparse.Namespace:

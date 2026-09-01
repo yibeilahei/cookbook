@@ -171,6 +171,15 @@ const RECOMMENDED_FONTS = {
     macos: { serif: "Ayuthaya", sans: "Thonburi", mono: "Thonburi" },
     windows: { serif: "Leelawadee UI", sans: "Leelawadee UI", mono: "Leelawadee UI" },
   },
+  // "Other" is a catch-all for scripts we don't have a curated recommendation
+  // for (e.g. Bengali, Tamil, Armenian, Ethiopic, ...). It falls back to each
+  // OS's default UI font, which has reasonably broad built-in glyph coverage
+  // and font-fallback behavior -- but the user should pick a script-specific
+  // font manually below if the default doesn't render their book correctly.
+  other: {
+    macos: { serif: "Helvetica Neue", sans: "Helvetica Neue", mono: "Menlo" },
+    windows: { serif: "Segoe UI", sans: "Segoe UI", mono: "Consolas" },
+  },
 };
 
 // Only Japanese/Chinese/Korean have a specialized ASCII-romanization pass
