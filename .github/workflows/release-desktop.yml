@@ -1,16 +1,16 @@
-name: Build desktop app
+name: Release desktop app
 
-# Builds the Electron app for macOS and Windows. PyInstaller doesn't
-# cross-compile, so the Python backend must be frozen separately on each OS
-# before electron-builder packages it in as a resource (see
-# packaging/pyinstaller/backend-server.spec and electron/package.json's
-# "build.extraResources").
+# Builds the Electron app for macOS and Windows and publishes the installers
+# to a GitHub Release whenever a version tag (e.g. v0.1.0) is pushed. See
+# build-desktop.yml for details on the PyInstaller + electron-builder flow.
 
 on:
   push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -61,3 +61,18 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          draft: false
