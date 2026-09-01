@@ -11,12 +11,14 @@ Dependencies: pymupdf, pillow, numpy  (see requirements.txt)
 """
 
 import argparse
+import multiprocessing
 import os
 import shutil
 import struct
 import sys
 import tempfile
 import zlib
+from concurrent.futures import ProcessPoolExecutor
 
 import fitz  # PyMuPDF
 import numpy as np
@@ -125,6 +127,29 @@ def render_page(page: fitz.Page, dpi: int, width: int, height: int) -> np.ndarra
     return np.asarray(canvas, dtype=np.uint8)
 
 
+def _render_page_body(pdf_path: str, page_index: int, dpi: int, width: int,
+                      height: int) -> bytes:
+    """Render+quantize+compress one page into its "header + body" bytes.
+
+    Runs in a worker process (see _write_book): opens its own fitz.Document
+    since Document/Page objects aren't picklable across the process boundary.
+    Reopening per call (rather than per worker) keeps this stateless and
+    simple; PyMuPDF opens are cheap relative to rendering a page.
+    """
+    with fitz.open(pdf_path) as doc:
+        gray = render_page(doc.load_page(page_index), dpi, width, height)
+    raw = quantize_to_xth(gray)
+    body, compression = compress_page(raw)
+    page_header = struct.pack(
+        XTH_PAGE_HEADER_FMT, XTH_MAGIC, width, height, 0, compression, len(body), 0)
+    return page_header + body
+
+
+# Below this page count, process-pool overhead (spawning workers, pickling,
+# IPC) outweighs the benefit of parallelizing; just render sequentially.
+PARALLEL_PAGE_THRESHOLD = 8
+
+
 def _truncate_utf8(text: str, limit: int) -> bytes:
     """Encode text to at most `limit` UTF-8 bytes without splitting a codepoint."""
     raw = text.encode("utf-8")
@@ -175,9 +200,9 @@ def build_chapters(doc: fitz.Document, page_count: int,
     return chapters
 
 
-def _write_book(out_path: str, doc: fitz.Document, page_indices: list, chapters: list,
-                dpi: int, read_direction: int, title: str, author: str,
-                width: int, height: int) -> None:
+def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: list,
+                chapters: list, dpi: int, read_direction: int, title: str,
+                author: str, width: int, height: int) -> None:
     """Write the given 0-based page indices of `doc` to an XTCH container.
 
     `chapters` holds (name, startPage, endPage) 1-based ranges relative to
@@ -200,22 +225,40 @@ def _write_book(out_path: str, doc: fitz.Document, page_indices: list, chapters:
     data_offset = page_table_off + page_count * PAGE_TABLE_ENTRY_SIZE
 
     # Pass 1: render + compress each page, spooling "page_header + body" to a
-    # temp file so peak memory stays O(1) page regardless of book length.
+    # temp file so peak memory stays O(1-ish) pages regardless of book length.
+    # Pages are independent, so for books past PARALLEL_PAGE_THRESHOLD this is
+    # farmed out to a process pool (CPU-bound: rasterize + numpy quantize +
+    # zlib compress). ProcessPoolExecutor.map keeps results in input order, so
+    # the spool is still written page-by-page in the book's natural order.
     page_sizes = []
+    workers = min(os.cpu_count() or 1, page_count)
     # 64 MiB spool threshold before falling back to a real temp file; either
     # way this is scratch space, never the final .xtch bytes.
     with tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024) as spool:
-        for n, page_index in enumerate(page_indices):
-            gray = render_page(doc.load_page(page_index), dpi, width, height)
-            raw = quantize_to_xth(gray)
-            body, compression = compress_page(raw)
-            page_header = struct.pack(
-                XTH_PAGE_HEADER_FMT,
-                XTH_MAGIC, width, height, 0, compression, len(body), 0)
-            spool.write(page_header)
-            spool.write(body)
-            page_sizes.append(len(page_header) + len(body))
-            print(f"  page {n + 1}/{page_count}", end="\r", file=sys.stderr, flush=True)
+        if workers > 1 and page_count >= PARALLEL_PAGE_THRESHOLD:
+            with ProcessPoolExecutor(max_workers=workers) as pool:
+                results = pool.map(
+                    _render_page_body,
+                    [pdf_path] * page_count, page_indices,
+                    [dpi] * page_count, [width] * page_count, [height] * page_count,
+                )
+                for n, page_bytes in enumerate(results):
+                    spool.write(page_bytes)
+                    page_sizes.append(len(page_bytes))
+                    print(f"  page {n + 1}/{page_count}", end="\r",
+                          file=sys.stderr, flush=True)
+        else:
+            for n, page_index in enumerate(page_indices):
+                gray = render_page(doc.load_page(page_index), dpi, width, height)
+                raw = quantize_to_xth(gray)
+                body, compression = compress_page(raw)
+                page_header = struct.pack(
+                    XTH_PAGE_HEADER_FMT,
+                    XTH_MAGIC, width, height, 0, compression, len(body), 0)
+                spool.write(page_header)
+                spool.write(body)
+                page_sizes.append(len(page_header) + len(body))
+                print(f"  page {n + 1}/{page_count}", end="\r", file=sys.stderr, flush=True)
 
         # Pass 2: now that every page's on-disk size is known, compute offsets,
         # write the fixed-size prefix (header/metadata/chapters/page table),
@@ -283,7 +326,7 @@ def convert(pdf_path: str, out_path: str, dpi: int, read_direction: int,
     title = title or meta.get("title") or ""
     author = author or meta.get("author") or ""
 
-    _write_book(out_path, doc, list(range(page_count)),
+    _write_book(out_path, pdf_path, doc, list(range(page_count)),
                 build_chapters(doc, page_count, cjk_language),
                 dpi, read_direction, title, author, width, height)
 
@@ -331,4 +374,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

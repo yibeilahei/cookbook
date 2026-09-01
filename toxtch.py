@@ -5,6 +5,7 @@ Ebooks are converted to a panel-sized PDF via Calibre, then packed by
 lib.pdf2xtch. PDFs are packed directly. Device geometry lives in devices.xtch.toml.
 """
 
+import multiprocessing
 import sys
 from pathlib import Path
 
@@ -59,4 +60,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()
