@@ -4,8 +4,8 @@ name: Release desktop app
 # to a GitHub Release whenever a version tag (e.g. v0.1.0) is pushed.
 #
 # Builds are unsigned: no Apple Developer ID / notarization, no Authenticode
-# cert. First launch needs a one-time bypass (Open Cookbook.command on macOS,
-# SmartScreen "More info → Run anyway" on Windows). See the README.
+# cert. Users should install with install.sh (macOS) or install.ps1 (Windows)
+# so browser quarantine / Mark of the Web never attaches. See the README.
 
 on:
   push:
@@ -27,7 +27,9 @@ jobs:
             artifact_name: cookbook-macos
           - os: windows-latest
             dist_script: dist:win
-            artifact_glob: electron/dist/*.exe
+            artifact_glob: |
+              electron/dist/*.exe
+              electron/dist/*.zip
             artifact_name: cookbook-windows
 
     runs-on: ${{ matrix.os }}

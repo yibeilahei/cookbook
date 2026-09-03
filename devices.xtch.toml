@@ -22,9 +22,14 @@
 #   korean              hangul (Revised Romanization)
 #   none                skip the pre-pass (plain Unidecode fallback only)
 # Aliases: ja/jp, zh/cn, ko/kr, off/no (for none).
+#
+# page_compression stores each XTH page as raw-DEFLATE when that shrinks it.
+# Off by default: currently the only firmware that supports page compression
+# is lazahata. Other firmware will fail to open compressed books.
 
 default = "x3"
 ascii_romanization = "japanese"
+page_compression = false
 font_size = 60
 
 # CJK fonts used when converting ebooks to PDF. Calibre looks these up by

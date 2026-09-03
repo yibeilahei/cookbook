@@ -108,6 +108,19 @@
             scripts are already made ASCII-safe automatically).
           </p>
 
+          <div class="row" id="settings-compress-row">
+            <label for="settings-compress-toggle" data-i18n="compressLabel">Page compression</label>
+            <label class="switch">
+              <input type="checkbox" id="settings-compress-toggle" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <p class="settings-hint" id="settings-compress-hint" data-i18n="compressHint">
+            Stores each .xtch page as raw-DEFLATE when that shrinks it. Off by
+            default: currently the only firmware that supports page compression
+            is lazahata.
+          </p>
+
           <h3><span data-i18n="fontsHeading">Fonts</span> (<span id="settings-fonts-os"></span>)</h3>
           <p class="settings-hint" data-i18n="fontsHint">
             Used by Calibre when converting ebooks to PDF, so Chinese,

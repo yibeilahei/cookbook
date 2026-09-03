@@ -49,6 +49,7 @@ def run(kind: str, config: dict, device: str, paths: list[str],
     dev = config["devices"][device]
     width, height, supersample, size = common.panel_size(dev, device)
     ascii_romanization = common.ascii_romanization_from_config(config) if kind == "xtch" else None
+    page_compression = bool(config.get("page_compression")) if kind == "xtch" else False
 
     inputs = common.expand_inputs([Path(p) for p in paths])
     out_dir_path = Path(output_dir).resolve() if output_dir else None
@@ -112,7 +113,7 @@ def run(kind: str, config: dict, device: str, paths: list[str],
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 pack_xtch(str(pdf.resolve()), str(dest), supersample, 0, "", "", 0,
                           width, height, ascii_romanization=ascii_romanization, on_page=_pack_progress,
-                          should_cancel=should_cancel)
+                          should_cancel=should_cancel, page_compression=page_compression)
             else:  # kind == "pdf"
                 if fonts is None:
                     fonts = common.fonts_for_os(config)

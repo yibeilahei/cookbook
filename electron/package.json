@@ -39,14 +39,8 @@
       "category": "public.app-category.utilities",
       "identity": null
     },
-    "dmg": {
-      "window": {
-        "width": 540,
-        "height": 420
-      }
-    },
     "win": {
-      "target": "nsis",
+      "target": ["nsis", "zip"],
       "extraFiles": [
         {
           "from": "../packaging/launchers/Start Cookbook.cmd",

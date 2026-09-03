@@ -87,11 +87,15 @@ def validate(kind: str, config: dict) -> None:
             raise ValueError(
                 f"devices.{key}.orientation must be 'portrait' or 'landscape'.")
 
-    if kind == "xtch" and config.get("ascii_romanization") is not None:
-        try:
-            common.normalize_ascii_romanization(config["ascii_romanization"])
-        except SystemExit as e:
-            raise ValueError(str(e.code)) from e
+    if kind == "xtch":
+        if config.get("ascii_romanization") is not None:
+            try:
+                common.normalize_ascii_romanization(config["ascii_romanization"])
+            except SystemExit as e:
+                raise ValueError(str(e.code)) from e
+        page_compression = config.get("page_compression")
+        if page_compression is not None and not isinstance(page_compression, bool):
+            raise ValueError("page_compression must be a boolean.")
 
     language = config.get("language")
     if language is not None and language not in common.FONT_LANGUAGES:

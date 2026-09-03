@@ -48,29 +48,30 @@ Drag and drop ebooks/PDFs (or whole folders) into the window, pick a mode
 written to an `output/` folder next to each input by default, or to a
 folder you pick.
 
-## Installing a GitHub Release
+## Install
 
-Builds are unsigned (no Apple Developer ID, no Authenticode cert), so the
-OS will warn on the first launch. After that, Cookbook starts like any
-other app.
-
-**macOS** — open the `.dmg`, then double-click **Open Cookbook.command**
-(not `Cookbook.app`). That strips Gatekeeper's quarantine flag and launches
-the app. If the command itself is blocked, right-click it → Open. After
-one successful launch you can drag `Cookbook.app` to Applications and
-double-click it as usual.
-
-If you already copied only the `.app` somewhere, this is the same thing:
+**macOS** — paste this in Terminal (same idea as Homebrew). Do not download
+the `.dmg` in a browser: Gatekeeper will block it, and any helper `.command`
+inside it.
 
 ```sh
-xattr -cr /path/to/Cookbook.app
-open /path/to/Cookbook.app
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/yibeilahei/cookbook/main/install.sh)"
 ```
 
-**Windows** — run the installer. SmartScreen may show "Windows protected
-your PC": click **More info** → **Run anyway**. After install, start
-Cookbook from the Start menu, or run **Start Cookbook.cmd** next to
-`Cookbook.exe` if the `.exe` is still blocked.
+That fetches the latest GitHub Release, copies `Cookbook.app` to
+`~/Applications`, and opens it. After that, launch it from there (or drag
+it to `/Applications`) like any other app.
+
+**Windows** — paste this in PowerShell or cmd (same idea). Do not download
+the `.exe` in a browser: SmartScreen will block it.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/yibeilahei/cookbook/main/install.ps1 | iex"
+```
+
+That fetches the latest GitHub Release, copies Cookbook to
+`%LOCALAPPDATA%\Programs\Cookbook`, unblocks it, and opens it. After that,
+launch it from the Start menu.
 
 ## Building a distributable app
 
@@ -134,6 +135,10 @@ supersample = 3        # rasterization multiplier before downscaling to the
   detection is skipped and the language must be picked manually.
 - `font_size` (top-level, not per-device) is the Calibre PDF default font
   size used when converting ebooks; editable from the in-app Settings panel.
+- `page_compression` (`.xtch` mode only, default off) stores each page as
+  raw-DEFLATE when that shrinks it. Currently the only firmware that
+  supports page compression is lazahata; leave this off for other
+  firmware. Editable from the in-app Settings panel.
 - `ascii_romanization` (`.xtch` mode only) controls how CJK in `.xtch`
   filenames and chapter names is turned into ASCII. `japanese` (default)
   uses Hepburn romaji, `chinese` uses pinyin (used for both

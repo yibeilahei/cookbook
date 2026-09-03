@@ -120,6 +120,22 @@ def compress_page(raw: bytes) -> tuple:
     return raw, 0
 
 
+def pack_page(raw: bytes, width: int, height: int, compress: bool) -> bytes:
+    """Build an XTH page's "header + body" bytes from quantized plane data.
+
+    When `compress` is false the page is stored raw (compression byte 0).
+    Off by default: currently the only firmware that supports page
+    compression is lazahata.
+    """
+    if compress:
+        body, compression = compress_page(raw)
+    else:
+        body, compression = raw, 0
+    page_header = struct.pack(
+        XTH_PAGE_HEADER_FMT, XTH_MAGIC, width, height, 0, compression, len(body), 0)
+    return page_header + body
+
+
 def render_page(page: fitz.Page, supersample: int, width: int, height: int) -> np.ndarray:
     mat = fitz.Matrix(supersample, supersample)
     pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY, alpha=False)
@@ -167,8 +183,8 @@ def render_preview(pdf_path: str, supersample: int, width: int, height: int,
 
 
 def _render_page_body(pdf_path: str, page_index: int, supersample: int, width: int,
-                      height: int) -> bytes:
-    """Render+quantize+compress one page into its "header + body" bytes.
+                      height: int, compress: bool = False) -> bytes:
+    """Render+quantize+optionally-compress one page into its "header + body" bytes.
 
     Runs in a worker process (see _write_book): opens its own fitz.Document
     since Document/Page objects aren't picklable across the process boundary.
@@ -177,11 +193,7 @@ def _render_page_body(pdf_path: str, page_index: int, supersample: int, width: i
     """
     with fitz.open(pdf_path) as doc:
         gray = render_page(doc.load_page(page_index), supersample, width, height)
-    raw = quantize_to_xth(gray)
-    body, compression = compress_page(raw)
-    page_header = struct.pack(
-        XTH_PAGE_HEADER_FMT, XTH_MAGIC, width, height, 0, compression, len(body), 0)
-    return page_header + body
+    return pack_page(quantize_to_xth(gray), width, height, compress)
 
 
 # Below this page count, process-pool overhead (spawning workers, pickling,
@@ -242,7 +254,7 @@ def build_chapters(doc: fitz.Document, page_count: int,
 def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: list,
                 chapters: list, supersample: int, read_direction: int, title: str,
                 author: str, width: int, height: int, *, on_page=None,
-                should_cancel=None) -> None:
+                should_cancel=None, page_compression: bool = False) -> None:
     """Write the given 0-based page indices of `doc` to an XTCH container.
 
     `chapters` holds (name, startPage, endPage) 1-based ranges relative to
@@ -257,12 +269,14 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
     and `ConversionCancelled` is raised (no partial file is left behind,
     since the real output file isn't opened until pass 2, below).
 
-    Pages are compressed independently (per-page raw-DEFLATE, falling back to
-    raw storage if that doesn't help), so their on-disk size varies. That means
-    offsets aren't known until every page has been rendered and compressed, so
-    this writes page bodies to a spooled temp file first (pass 1), then writes
-    the real file with the now-known page table followed by a straight copy of
-    the temp file's contents (pass 2).
+    When `page_compression` is on, pages are compressed independently
+    (per-page raw-DEFLATE, falling back to raw storage if that doesn't help),
+    so their on-disk size varies. Offsets aren't known until every page has
+    been rendered, so this writes page bodies to a spooled temp file first
+    (pass 1), then writes the real file with the now-known page table
+    followed by a straight copy of the temp file's contents (pass 2).
+    Compression is off by default: currently the only firmware that
+    supports it is lazahata.
     """
     page_count = len(page_indices)
     chapter_table = bytearray()
@@ -273,13 +287,14 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
     page_table_off = CHAPTER_TABLE_OFF + len(chapter_table)
     data_offset = page_table_off + page_count * PAGE_TABLE_ENTRY_SIZE
 
-    # Pass 1: render + compress each page, spooling "page_header + body" to a
-    # temp file so peak memory stays O(1-ish) pages regardless of book length.
-    # Pages are independent, so for books past PARALLEL_PAGE_THRESHOLD this is
-    # farmed out to a process pool (CPU-bound: rasterize + numpy quantize +
-    # zlib compress). Futures are submitted (and collected) in page order, so
-    # the spool is still written page-by-page in the book's natural order,
-    # and not-yet-started futures can be dropped on cancellation.
+    # Pass 1: render (+ optionally compress) each page, spooling
+    # "page_header + body" to a temp file so peak memory stays O(1-ish)
+    # pages regardless of book length. Pages are independent, so for books
+    # past PARALLEL_PAGE_THRESHOLD this is farmed out to a process pool
+    # (CPU-bound: rasterize + numpy quantize + optional zlib compress).
+    # Futures are submitted (and collected) in page order, so the spool is
+    # still written page-by-page in the book's natural order, and
+    # not-yet-started futures can be dropped on cancellation.
     page_sizes = []
     workers = min(os.cpu_count() or 1, page_count)
     # 64 MiB spool threshold before falling back to a real temp file; either
@@ -288,7 +303,8 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
         if workers > 1 and page_count >= PARALLEL_PAGE_THRESHOLD:
             with ProcessPoolExecutor(max_workers=workers) as pool:
                 futures = [
-                    pool.submit(_render_page_body, pdf_path, page_index, supersample, width, height)
+                    pool.submit(_render_page_body, pdf_path, page_index, supersample,
+                                width, height, page_compression)
                     for page_index in page_indices
                 ]
                 for n, future in enumerate(futures):
@@ -306,14 +322,10 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
         else:
             for n, page_index in enumerate(page_indices):
                 gray = render_page(doc.load_page(page_index), supersample, width, height)
-                raw = quantize_to_xth(gray)
-                body, compression = compress_page(raw)
-                page_header = struct.pack(
-                    XTH_PAGE_HEADER_FMT,
-                    XTH_MAGIC, width, height, 0, compression, len(body), 0)
-                spool.write(page_header)
-                spool.write(body)
-                page_sizes.append(len(page_header) + len(body))
+                page_bytes = pack_page(
+                    quantize_to_xth(gray), width, height, page_compression)
+                spool.write(page_bytes)
+                page_sizes.append(len(page_bytes))
                 print(f"  page {n + 1}/{page_count}", end="\r", file=sys.stderr, flush=True)
                 if on_page is not None:
                     on_page(n + 1, page_count)
@@ -367,7 +379,7 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
 def convert(pdf_path: str, out_path: str, supersample: int, read_direction: int,
             title: str, author: str, max_pages: int, width: int, height: int,
             *, ascii_romanization: str = DEFAULT_ASCII_ROMANIZATION, on_page=None,
-            should_cancel=None) -> None:
+            should_cancel=None, page_compression: bool = False) -> None:
     # XTH planes are column-major with 8 vertical pixels per byte, but the
     # declared dataSize is ((w*h+7)/8)*2; the two only agree when height is a
     # multiple of 8, otherwise every page offset would be wrong.
@@ -390,7 +402,7 @@ def convert(pdf_path: str, out_path: str, supersample: int, read_direction: int,
     _write_book(out_path, pdf_path, doc, list(range(page_count)),
                 build_chapters(doc, page_count, ascii_romanization),
                 supersample, read_direction, title, author, width, height, on_page=on_page,
-                should_cancel=should_cancel)
+                should_cancel=should_cancel, page_compression=page_compression)
 
 
 def main() -> None:
@@ -421,6 +433,10 @@ def main() -> None:
         "--ascii-romanization", default=DEFAULT_ASCII_ROMANIZATION,
         help="Romanization pass for chapter names and the default output filename: "
              "japanese (default), chinese, korean, or none (skip romanization)")
+    parser.add_argument(
+        "--page-compression", action="store_true", default=False,
+        help="Raw-DEFLATE compress each page when that shrinks it. Off by default: "
+             "currently the only firmware that supports page compression is lazahata.")
     args = parser.parse_args()
     ascii_romanization = normalize_ascii_romanization(args.ascii_romanization)
 
@@ -433,7 +449,8 @@ def main() -> None:
 
     convert(args.pdf, output, args.supersample, args.read_direction,
             args.title, args.author, args.max_pages, args.width, args.height,
-            ascii_romanization=ascii_romanization)
+            ascii_romanization=ascii_romanization,
+            page_compression=args.page_compression)
 
 
 if __name__ == "__main__":

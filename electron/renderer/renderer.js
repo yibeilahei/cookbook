@@ -333,10 +333,13 @@ async function refreshSettingsView() {
 
   el("settings-romanize-row").classList.toggle("hidden", state.mode !== "xtch");
   el("settings-romanize-hint").classList.toggle("hidden", state.mode !== "xtch");
+  el("settings-compress-row").classList.toggle("hidden", state.mode !== "xtch");
+  el("settings-compress-hint").classList.toggle("hidden", state.mode !== "xtch");
   const romanize = config.ascii_romanization != null
     ? config.ascii_romanization !== "none"
     : ASCII_ROMANIZATION_LANGUAGES.includes(language); // default: on for Japanese/Chinese/Korean
   setRomanizeToggle(language, romanize);
+  el("settings-compress-toggle").checked = !!config.page_compression;
 
   const fontsKey = window.platform.fontsKey; // "macos" | "windows", from preload.js
   el("settings-fonts-os").textContent = fontsKey === "windows" ? t("fontsOsWindows") : t("fontsOsMacos");
@@ -400,6 +403,7 @@ async function saveSettingsModal() {
     if (state.mode === "xtch") {
       const romanize = el("settings-romanize-toggle").checked;
       updated.ascii_romanization = (ASCII_ROMANIZATION_LANGUAGES.includes(language) && romanize) ? asciiRomanizationFor(language) : "none";
+      updated.page_compression = el("settings-compress-toggle").checked;
     }
     updated.language = language;
 
@@ -760,6 +764,7 @@ function init() {
 
   // Settings auto-save on every change -- no explicit Save button.
   el("settings-romanize-toggle").addEventListener("change", saveSettingsModal);
+  el("settings-compress-toggle").addEventListener("change", saveSettingsModal);
   el("settings-font-serif").addEventListener("change", saveSettingsModal);
   el("settings-font-sans").addEventListener("change", saveSettingsModal);
   el("settings-font-mono").addEventListener("change", saveSettingsModal);
