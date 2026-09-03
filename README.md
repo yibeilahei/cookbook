@@ -48,6 +48,30 @@ Drag and drop ebooks/PDFs (or whole folders) into the window, pick a mode
 written to an `output/` folder next to each input by default, or to a
 folder you pick.
 
+## Installing a GitHub Release
+
+Builds are unsigned (no Apple Developer ID, no Authenticode cert), so the
+OS will warn on the first launch. After that, Cookbook starts like any
+other app.
+
+**macOS** — open the `.dmg`, then double-click **Open Cookbook.command**
+(not `Cookbook.app`). That strips Gatekeeper's quarantine flag and launches
+the app. If the command itself is blocked, right-click it → Open. After
+one successful launch you can drag `Cookbook.app` to Applications and
+double-click it as usual.
+
+If you already copied only the `.app` somewhere, this is the same thing:
+
+```sh
+xattr -cr /path/to/Cookbook.app
+open /path/to/Cookbook.app
+```
+
+**Windows** — run the installer. SmartScreen may show "Windows protected
+your PC": click **More info** → **Run anyway**. After install, start
+Cookbook from the Start menu, or run **Start Cookbook.cmd** next to
+`Cookbook.exe` if the `.exe` is still blocked.
+
 ## Building a distributable app
 
 PyInstaller doesn't cross-compile, so the Python backend must be frozen on
@@ -64,10 +88,8 @@ npm run dist:mac    # -> electron/dist/*.dmg (run this leg on macOS)
 npm run dist:win    # -> electron/dist/*.exe (run this leg on Windows)
 ```
 
-`.github/workflows/build-desktop.yml` runs both legs on a `macos-latest` /
-`windows-latest` CI matrix. Builds are currently unsigned (no Gatekeeper
-notarization / Windows code-signing cert yet), so macOS will warn on first
-launch and Windows SmartScreen may flag the installer.
+`.github/workflows/release-desktop.yml` runs both legs on a `macos-latest` /
+`windows-latest` CI matrix when a `v*.*.*` tag is pushed.
 
 ## Adding or changing devices
 

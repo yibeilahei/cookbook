@@ -1,8 +1,11 @@
 name: Release desktop app
 
 # Builds the Electron app for macOS and Windows and publishes the installers
-# to a GitHub Release whenever a version tag (e.g. v0.1.0) is pushed. See
-# build-desktop.yml for details on the PyInstaller + electron-builder flow.
+# to a GitHub Release whenever a version tag (e.g. v0.1.0) is pushed.
+#
+# Builds are unsigned: no Apple Developer ID / notarization, no Authenticode
+# cert. First launch needs a one-time bypass (Open Cookbook.command on macOS,
+# SmartScreen "More info → Run anyway" on Windows). See the README.
 
 on:
   push:
