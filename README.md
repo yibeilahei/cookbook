@@ -8,6 +8,35 @@ Desktop app (macOS and Windows) that converts ebooks/PDFs for eink readers:
 Under the hood it's an Electron UI driving a Python backend (Calibre does
 ebook → PDF conversion; a bundled packer turns PDFs into `.xtch`).
 
+## Install
+
+Builds are unsigned (no Apple Developer ID, no Authenticode cert). Install
+with the commands below — a browser download of the `.dmg` / `.exe` will
+be blocked by Gatekeeper or SmartScreen.
+
+Calibre is required for ebook → PDF conversion (not for PDF → `.xtch`).
+Skip its line if it is already installed.
+
+**macOS** — paste in Terminal:
+
+```sh
+brew install --cask calibre
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/yibeilahei/cookbook/main/install.sh)"
+```
+
+Copies `Cookbook.app` to `~/Applications` and opens it. After that, launch
+it from there (or drag it to `/Applications`).
+
+**Windows** — paste in PowerShell or cmd:
+
+```powershell
+winget install -e --id calibre.calibre
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/yibeilahei/cookbook/main/install.ps1 | iex"
+```
+
+Copies Cookbook to `%LOCALAPPDATA%\Programs\Cookbook` and opens it. After
+that, launch it from the Start menu.
+
 ## Setup (running from source)
 
 Python 3.11+ and Node 20+ recommended.
@@ -48,31 +77,6 @@ Drag and drop ebooks/PDFs (or whole folders) into the window, pick a mode
 written to an `output/` folder next to each input by default, or to a
 folder you pick.
 
-## Install
-
-**macOS** — paste this in Terminal (same idea as Homebrew). Do not download
-the `.dmg` in a browser: Gatekeeper will block it, and any helper `.command`
-inside it.
-
-```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/yibeilahei/cookbook/main/install.sh)"
-```
-
-That fetches the latest GitHub Release, copies `Cookbook.app` to
-`~/Applications`, and opens it. After that, launch it from there (or drag
-it to `/Applications`) like any other app.
-
-**Windows** — paste this in PowerShell or cmd (same idea). Do not download
-the `.exe` in a browser: SmartScreen will block it.
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/yibeilahei/cookbook/main/install.ps1 | iex"
-```
-
-That fetches the latest GitHub Release, copies Cookbook to
-`%LOCALAPPDATA%\Programs\Cookbook`, unblocks it, and opens it. After that,
-launch it from the Start menu.
-
 ## Building a distributable app
 
 PyInstaller doesn't cross-compile, so the Python backend must be frozen on
@@ -86,7 +90,7 @@ pyinstaller packaging/pyinstaller/backend-server.spec \
 cd electron
 npm ci
 npm run dist:mac    # -> electron/dist/*.dmg (run this leg on macOS)
-npm run dist:win    # -> electron/dist/*.exe (run this leg on Windows)
+npm run dist:win    # -> electron/dist/*.exe and *.zip (run this leg on Windows)
 ```
 
 `.github/workflows/release-desktop.yml` runs both legs on a `macos-latest` /
@@ -114,45 +118,53 @@ supersample = 3        # rasterization multiplier before downscaling to the
 ```
 
 - `default` sets which device is pre-selected in that mode's picker.
-- `language` (top-level) is a script-family bucket used to recommend fonts
-  and (in `.xtch` mode) whether CJK-romanization is applicable. One of
-  `latin` (default; covers English, French, German, Spanish, etc.),
-  `japanese`, `chinese_simplified`, `chinese_traditional`, `korean`,
-  `cyrillic` (Russian, Ukrainian, etc.), `greek`, `arabic` (also
-  Persian/Urdu/Pashto), `hebrew`, `devanagari` (Hindi, Marathi, etc.),
-  `thai`, `bengali`, `tamil`, `telugu`, `kannada`, `malayalam`, `gujarati`,
-  `gurmukhi` (Punjabi), `odia`, `sinhala`, `myanmar`, `ethiopic` (Amharic,
-  Tigrinya), `khmer`, or `other` (any script without a curated font preset
-  -- pick fonts manually). Together these cover the scripts used by the
-  world's ~100 most-spoken languages. Auto-detected from the system locale by default, and re-detected
-  per-book from its own metadata when a book is added, if possible;
-  editable from the in-app Settings panel. Simplified vs. Traditional
-  Chinese can't be told apart from Calibre's language metadata alone (it
-  normalizes `zh`, `zh-CN`, `zh-TW`, `zh-Hans`, `zh-Hant`, etc. all down to
-  the same generic code), so per-book auto-detection instead inspects the
-  book's title/author text for script-distinguishing characters; when a
-  title has none (e.g. very short, or spelled the same in both scripts),
-  detection is skipped and the language must be picked manually.
-- `font_size` (top-level, not per-device) is the Calibre PDF default font
-  size used when converting ebooks; editable from the in-app Settings panel.
+- `orientation` (`portrait` or `landscape`) is per-device; landscape swaps
+  width/height so pages are laid out sideways.
+
+## Settings
+
+These are top-level fields in the same TOML (not per-device), and are also
+editable from the in-app Settings panel.
+
+- `language` is a script-family bucket used to recommend fonts and (in
+  `.xtch` mode) whether CJK-romanization is applicable. One of `latin`
+  (default; covers English, French, German, Spanish, etc.), `japanese`,
+  `chinese_simplified`, `chinese_traditional`, `korean`, `cyrillic`
+  (Russian, Ukrainian, etc.), `greek`, `arabic` (also Persian/Urdu/Pashto),
+  `hebrew`, `devanagari` (Hindi, Marathi, etc.), `thai`, `bengali`, `tamil`,
+  `telugu`, `kannada`, `malayalam`, `gujarati`, `gurmukhi` (Punjabi),
+  `odia`, `sinhala`, `myanmar`, `ethiopic` (Amharic, Tigrinya), `khmer`, or
+  `other` (any script without a curated font preset — pick fonts manually).
+  Together these cover the scripts used by the world's ~100 most-spoken
+  languages. Auto-detected from the system locale by default, and
+  re-detected per-book from its own metadata when a book is added, if
+  possible. Simplified vs. Traditional Chinese can't be told apart from
+  Calibre's language metadata alone (it normalizes `zh`, `zh-CN`, `zh-TW`,
+  `zh-Hans`, `zh-Hant`, etc. all down to the same generic code), so
+  per-book auto-detection instead inspects the book's title/author text for
+  script-distinguishing characters; when a title has none (e.g. very short,
+  or spelled the same in both scripts), detection is skipped and the
+  language must be picked manually.
+- `font_size` is the Calibre PDF default font size used when converting
+  ebooks.
 - `page_compression` (`.xtch` mode only, default off) stores each page as
   raw-DEFLATE when that shrinks it. Currently the only firmware that
-  supports page compression is lazahata; leave this off for other
-  firmware. Editable from the in-app Settings panel.
+  supports page compression is lazahata; leave this off for other firmware.
 - `ascii_romanization` (`.xtch` mode only) controls how CJK in `.xtch`
   filenames and chapter names is turned into ASCII. `japanese` (default)
   uses Hepburn romaji, `chinese` uses pinyin (used for both
-  `chinese_simplified` and `chinese_traditional` -- pinyin doesn't depend
+  `chinese_simplified` and `chinese_traditional` — pinyin doesn't depend
   on which script a book uses), `korean` uses Revised Romanization of
   hangul, `none` skips this extra pass (every other language, and every
   script including these three, still always gets a plain Unidecode
-  ASCII-fallback for `.xtch` filenames -- this setting only controls
+  ASCII-fallback for `.xtch` filenames — this setting only controls
   whether a higher-quality Japanese/Chinese/Korean-specific pass runs
   first). Named for what it controls (ASCII-safety), not a language
-  selection -- it's a byproduct of the `language` setting above, not a
+  selection — it's a byproduct of the `language` setting above, not a
   separate user-facing language choice.
 - `[fonts.macos]` / `[fonts.windows]` set the CJK fonts used for ebook → PDF
   conversion on each OS. Change these if a family is not installed.
 
 Low-level packer, for scripting (already a PDF, skips the app entirely):
-`python -m lib.pdf2xtch book.pdf`.
+`python -m lib.pdf2xtch book.pdf`. Pass `--page-compression` to turn
+compression on (same lazahata-only caveat as above).
