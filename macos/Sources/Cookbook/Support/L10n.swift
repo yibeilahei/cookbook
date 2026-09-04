@@ -1,7 +1,6 @@
 import Foundation
 
-/// UI-chrome strings. Independent of the book-content Language setting —
-/// the chrome always follows the OS locale, same as the old renderer.
+/// UI-chrome strings. Follows the OS locale; independent of the book's Language setting.
 enum L10n {
     private static let table: [String: [String: String]] = load()
     private static let language: String = detectUiLanguage()

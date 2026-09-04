@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Per-mode language, fonts, and page-compression settings.
+
 struct SettingsPane: View {
     @Environment(AppModel.self) private var model
 
@@ -7,7 +9,7 @@ struct SettingsPane: View {
         @Bindable var model = model
         Form {
             Section {
-                Text("\(L10n.t("settingsHeading")) (\(model.isXtch ? L10n.t("modeLabelXtch") : L10n.t("modeLabelPdf")))")
+                Text("\(L10n.t("settingsHeading")) (\(model.isXtch ? L10n.t("modeXtch") : L10n.t("modePdf")))")
                     .font(.headline)
             }
             Section {
@@ -26,15 +28,6 @@ struct SettingsPane: View {
 
             if model.isXtch {
                 Section {
-                    Toggle(L10n.t("romanizeLabel"), isOn: $model.romanize)
-                        .disabled(!model.romanizeEnabled)
-                        .onChange(of: model.romanize) { _, _ in
-                            Task { await model.saveSettings() }
-                        }
-                    Text(L10n.t("romanizeHint"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
                     Toggle(L10n.t("compressLabel"), isOn: $model.pageCompression)
                         .onChange(of: model.pageCompression) { _, _ in
                             Task { await model.saveSettings() }

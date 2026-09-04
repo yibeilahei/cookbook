@@ -1,6 +1,8 @@
 import AppKit
 import SwiftUI
 
+/// SwiftUI entry point. Conversion runs in-process (Calibre CLI + Swift packer).
+
 @main
 struct CookbookApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -24,6 +26,11 @@ struct CookbookApp: App {
                     .keyboardShortcut("o")
             }
             CommandMenu(L10n.t("convert")) {
+                Button(L10n.t("convert")) {
+                    Task { await model.convert() }
+                }
+                .keyboardShortcut("r")
+                .disabled(model.files.isEmpty)
                 Button(L10n.t("cancel")) {
                     Task { await model.cancel() }
                 }

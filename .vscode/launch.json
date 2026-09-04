@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:cookbook}/macos",
+            "name": "Debug Cookbook (macos)",
+            "target": "Cookbook",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Cookbook (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:cookbook}/macos",
+            "name": "Release Cookbook (macos)",
+            "target": "Cookbook",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Cookbook (macos)"
+        }
+    ]
+}

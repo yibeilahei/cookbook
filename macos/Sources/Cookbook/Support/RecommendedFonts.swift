@@ -1,5 +1,7 @@
 import Foundation
 
+/// Per-script font presets and locale → language-bucket mapping.
+
 struct FontPreset: Hashable {
     var serif: String
     var sans: String
@@ -15,23 +17,12 @@ enum BookLanguage {
         "other",
     ]
 
-    static let romanizable: Set<String> = [
-        "japanese", "chinese_simplified", "chinese_traditional", "korean",
-    ]
-
     static func optKey(_ language: String) -> String {
         camelKey("opt", language)
     }
 
     static func nameKey(_ language: String) -> String {
         camelKey("langName", language)
-    }
-
-    static func asciiRomanization(for language: String) -> String {
-        if language == "chinese_simplified" || language == "chinese_traditional" {
-            return "chinese"
-        }
-        return language
     }
 
     static func detectFromLocale() -> String {

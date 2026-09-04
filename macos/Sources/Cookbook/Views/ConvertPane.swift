@@ -1,6 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Device picker, drop zone, file list. Convert / Cancel / Preview live on each row.
+
 struct ConvertPane: View {
     @Environment(AppModel.self) private var model
     @State private var dropTargeted = false
@@ -27,6 +29,12 @@ struct ConvertPane: View {
 
             fileList
 
+            if !model.convertStatus.isEmpty {
+                Text(model.convertStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             HStack {
                 Text(L10n.t("outputFolder"))
                     .foregroundStyle(.secondary)
@@ -41,26 +49,6 @@ struct ConvertPane: View {
                 Button(L10n.t("browse")) { model.pickOutputDir() }
                 Button(L10n.t("useDefault")) { model.clearOutputDir() }
                     .disabled(model.outputDir == nil)
-            }
-
-            if model.showBatch {
-                VStack(alignment: .leading, spacing: 4) {
-                    ProgressView(value: Double(model.batchPercent), total: 100)
-                    Text(L10n.t("batchProgress", [
-                        "completed": "\(model.batchCompleted)",
-                        "total": "\(model.batchTotal)",
-                        "percent": "\(model.batchPercent)",
-                        "eta": model.batchEta,
-                    ]))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-            }
-
-            if !model.convertStatus.isEmpty {
-                Text(model.convertStatus)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
         }
         .padding(16)
@@ -115,10 +103,19 @@ struct ConvertPane: View {
                             Button(L10n.t("cancel")) {
                                 Task { await model.cancel() }
                             }
+                        } else {
+                            Button(L10n.t("convert")) {
+                                Task { await model.convert(paths: [file.path]) }
+                            }
                         }
                         if model.isXtch && file.canPreviewXtch {
                             Button(L10n.t("previewBtn")) {
                                 Task { await model.openPreview(file) }
+                            }
+                        }
+                        if !file.log.isEmpty {
+                            Button(L10n.t(model.expandedLogs.contains(file.path) ? "hideLog" : "showLog")) {
+                                model.toggleLog(file.path)
                             }
                         }
                         if !model.isConverting(file.path) {
@@ -163,9 +160,23 @@ private struct FileRow: View {
     @Environment(AppModel.self) private var model
     let file: InputFile
 
+    private var logExpanded: Bool { model.expandedLogs.contains(file.path) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
+                if !file.log.isEmpty {
+                    Button {
+                        model.toggleLog(file.path)
+                    } label: {
+                        Image(systemName: logExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 12)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(L10n.t(logExpanded ? "hideLog" : "showLog"))
+                }
                 Text(file.name)
                     .lineLimit(1)
                     .help(file.path)
@@ -183,6 +194,11 @@ private struct FileRow: View {
                 if model.isConverting(file.path) {
                     Button(L10n.t("cancel")) {
                         Task { await model.cancel() }
+                    }
+                    .buttonStyle(.borderless)
+                } else {
+                    Button(L10n.t("convert")) {
+                        Task { await model.convert(paths: [file.path]) }
                     }
                     .buttonStyle(.borderless)
                 }
@@ -205,8 +221,49 @@ private struct FileRow: View {
             }
             ProgressView(value: (file.percent ?? 0) / 100)
                 .progressViewStyle(.linear)
+            if !file.log.isEmpty {
+                logSection
+            }
         }
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private var logSection: some View {
+        if logExpanded {
+            ScrollView {
+                ScrollViewReader { proxy in
+                    Text(file.log.joined(separator: "\n"))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .id("log-end")
+                        .onAppear {
+                            proxy.scrollTo("log-end", anchor: .bottom)
+                        }
+                        .onChange(of: file.log.count) {
+                            proxy.scrollTo("log-end", anchor: .bottom)
+                        }
+                }
+            }
+            .frame(maxHeight: 180)
+            .padding(8)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.secondary.opacity(0.25))
+            }
+        } else if let last = file.log.last {
+            Text(last)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { model.toggleLog(file.path) }
+                .help(L10n.t("showLog"))
+        }
     }
 
     private func stageColor(_ stage: String) -> Color {

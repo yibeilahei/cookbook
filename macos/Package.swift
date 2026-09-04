@@ -1,4 +1,5 @@
 // swift-tools-version: 6.0
+// SwiftUI app. Dev: `cd macos && swift run`. Release: scripts/build-app.sh.
 import PackageDescription
 
 let package = Package(

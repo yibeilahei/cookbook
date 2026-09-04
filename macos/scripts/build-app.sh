@@ -1,17 +1,15 @@
 #!/bin/bash
-# Build Cookbook.app (SwiftUI + optional frozen Python backend) and a .dmg.
-# Run from anywhere. Usage:
+# Build Cookbook.app and a .dmg. Run from anywhere:
 #
 #   macos/scripts/build-app.sh
 #
-# Expects packaging/dist/backend-server/ if you want the backend bundled
-# (freeze it first with PyInstaller; see README). Dev runs don't need that:
-# `cd macos && swift run` will spawn `.venv/bin/python3 -m backend.server`.
+# The app calls Calibre's ebook-convert directly and packs .xtch in Swift.
+# Calibre is a runtime dependency, not bundled.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 MACOS="$ROOT/macos"
-DIST="${COOKBOOK_DIST:-$ROOT/packaging/dist}"
+DIST="${COOKBOOK_DIST:-$ROOT/dist}"
 APP_NAME="Cookbook"
 APP="$DIST/${APP_NAME}.app"
 
@@ -36,15 +34,6 @@ cp "$MACOS/Info.plist" "$APP/Contents/Info.plist"
 BUNDLE_NAME="Cookbook_Cookbook.bundle"
 if [ -d "$BIN_DIR/$BUNDLE_NAME" ]; then
   cp -R "$BIN_DIR/$BUNDLE_NAME" "$APP/Contents/Resources/$BUNDLE_NAME"
-fi
-
-BACKEND_SRC="$DIST/backend-server"
-if [ -d "$BACKEND_SRC" ]; then
-  ohai "Bundling Python backend…"
-  mkdir -p "$APP/Contents/Resources/backend"
-  ditto "$BACKEND_SRC" "$APP/Contents/Resources/backend"
-else
-  echo "note: $BACKEND_SRC not found; the app will look for a repo-local Python backend at runtime." >&2
 fi
 
 ohai "Ad-hoc signing…"

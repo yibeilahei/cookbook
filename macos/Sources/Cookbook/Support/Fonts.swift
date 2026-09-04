@@ -1,5 +1,7 @@
 import AppKit
 
+/// Installed font families, with localized display names for the Settings pickers.
+
 struct SystemFont: Identifiable, Hashable {
     var family: String
     var display: String

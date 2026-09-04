@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Add, edit, and delete device profiles for the current mode.
+
 struct DeviceEditorSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -9,7 +11,7 @@ struct DeviceEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("\(L10n.t("editDevicesHeading")) (\(model.isXtch ? L10n.t("modeLabelXtch") : L10n.t("modeLabelPdf")))")
+            Text("\(L10n.t("editDevicesHeading")) (\(model.isXtch ? L10n.t("modeXtch") : L10n.t("modePdf")))")
                 .font(.title2)
             Table(of: DeviceDraft.self) {
                 TableColumn(L10n.t("colKey")) { row in

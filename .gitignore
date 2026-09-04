@@ -1,10 +1,5 @@
-.venv
-__pycache__
 .DS_Store
 
-# Build artifacts (see packaging/pyinstaller/backend-server.spec and
-# macos/scripts/build-app.sh; none of it is committed).
-macos/.build
-macos/.swiftpm
-packaging/build
-packaging/dist
+macos/.build/
+macos/.swiftpm/
+dist/

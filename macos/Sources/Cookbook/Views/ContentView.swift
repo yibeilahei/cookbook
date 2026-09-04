@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Root window: convert pane, settings, Calibre banner, sheets.
+
 struct ContentView: View {
     @Environment(AppModel.self) private var model
 
@@ -31,12 +33,15 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker(L10n.t("device"), selection: $model.mode) {
+                Picker(L10n.t("modeXtch"), selection: $model.mode) {
                     Text(L10n.t("modeXtch")).tag(ConvertMode.xtch)
                     Text(L10n.t("modePdf")).tag(ConvertMode.pdf)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 160)
+                .onChange(of: model.mode) { _, newMode in
+                    Task { await model.applyMode(newMode) }
+                }
             }
         }
         .navigationTitle("Cookbook")

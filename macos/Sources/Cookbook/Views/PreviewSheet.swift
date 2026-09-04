@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Page images unpacked from a converted `.xtch` file.
+
 struct PreviewSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss

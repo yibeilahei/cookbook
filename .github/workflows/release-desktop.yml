@@ -1,11 +1,7 @@
 name: Release desktop app
 
-# Builds the SwiftUI Mac app (with a frozen Python backend) and publishes
-# the disk image to a GitHub Release whenever a version tag (e.g. v0.1.0)
-# is pushed.
-#
-# Builds are unsigned: no Apple Developer ID / notarization. Users should
-# install with install.sh so browser quarantine never attaches. See the README.
+# Trigger: git push origin v0.1.0  (tag must match v*.*.*)
+# Result: GitHub Release with Cookbook.dmg. Install via install.sh (unsigned).
 
 on:
   push:
@@ -21,24 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Python dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Freeze the Python backend with PyInstaller
-        run: >
-          pyinstaller packaging/pyinstaller/backend-server.spec
-          --distpath packaging/dist --workpath packaging/build --noconfirm
-
       - name: Build Cookbook.app and disk image
         run: macos/scripts/build-app.sh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: packaging/dist/*.dmg
+          files: dist/*.dmg
           generate_release_notes: true
           draft: false

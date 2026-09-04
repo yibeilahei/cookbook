@@ -1,8 +1,0 @@
-# Build-time only (not needed to run the backend directly or to develop the
-# SwiftUI app in dev mode). Install alongside requirements.txt when
-# packaging the desktop app's Python backend:
-#
-#   pip install -r requirements.txt -r requirements-dev.txt
-#   pyinstaller packaging/pyinstaller/backend-server.spec \
-#       --distpath packaging/dist --workpath packaging/build --noconfirm
-pyinstaller>=6.0
