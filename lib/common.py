@@ -40,8 +40,8 @@ _ASCII_ROMANIZATION_ALIASES = {
     "none": "none", "no": "none", "off": "none",
 }
 
-# Languages the Electron UI offers recommended font presets for (see
-# electron/renderer/renderer.js RECOMMENDED_FONTS). These are script
+# Languages the desktop UI offers recommended font presets for (see
+# macos/Sources/Cookbook/RecommendedFonts.swift). These are script
 # families, not individual languages -- font choice only really needs to
 # vary by writing system (e.g. French/German/Spanish all work fine with the
 # same Latin font presets), so this small set of buckets covers effectively
@@ -183,17 +183,6 @@ def ascii_slug(text: str, romanization: str | None = None) -> str:
     return slugify(to_ascii(text, romanization)) or "book"
 
 
-def configure_stdio() -> None:
-    """Avoid UnicodeEncodeError when printing Japanese paths on Windows consoles."""
-    if sys.platform != "win32":
-        return
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, OSError):
-            pass
-
-
 def choose_device(config: dict) -> str:
     """Interactive device menu; config default if stdin is not a TTY."""
     devices = config.get("devices") or {}
@@ -225,17 +214,15 @@ def choose_device(config: dict) -> str:
 
 
 def fonts_for_os(config: dict) -> dict:
-    """Pick serif/sans/mono for this OS from the device config."""
+    """Pick serif/sans/mono from the device config."""
     fonts = config.get("fonts") or {}
-    os_key = {"Darwin": "macos", "Windows": "windows"}.get(platform.system())
-    section = fonts.get(os_key) if os_key else None
+    section = fonts.get("macos")
     if isinstance(section, dict) and section.get("serif"):
         chosen = section
     elif fonts.get("serif"):
         chosen = fonts
     else:
-        where = f"[fonts.{os_key}]" if os_key else "[fonts]"
-        sys.exit(f"No fonts configured for this OS. Add a {where} table.")
+        sys.exit("No fonts configured. Add a [fonts.macos] table.")
     for key in ("serif", "sans", "mono"):
         if key not in chosen:
             sys.exit(f"fonts.{key} is missing in the config file")
@@ -270,11 +257,8 @@ def panel_size(dev: dict, device: str) -> tuple[int, int, int, str]:
 
 
 def _calibre_install_hint() -> str:
-    system = platform.system()
-    if system == "Darwin":
+    if platform.system() == "Darwin":
         how = "  brew install --cask calibre\n  or download from https://calibre-ebook.com"
-    elif system == "Windows":
-        how = "  winget install -e --id calibre.calibre\n  or download from https://calibre-ebook.com"
     else:
         how = "  download from https://calibre-ebook.com"
     return (
@@ -293,33 +277,17 @@ def find_ebook_convert() -> str:
             return str(p)
         sys.exit(f"EBOOK_CONVERT is set but not a file: {env}")
 
-    exe = shutil.which("ebook-convert") or shutil.which("ebook-convert.exe")
+    exe = shutil.which("ebook-convert")
     if exe:
         return exe
 
     home = Path.home()
     candidates: list[Path] = []
-    system = platform.system()
-    if system == "Darwin":
+    if platform.system() == "Darwin":
         candidates += [
             Path("/Applications/calibre.app/Contents/MacOS/ebook-convert"),
             home / "Applications/calibre.app/Contents/MacOS/ebook-convert",
         ]
-    elif system == "Windows":
-        roots = [
-            os.environ.get("ProgramFiles"),
-            os.environ.get("ProgramFiles(x86)"),
-        ]
-        local = os.environ.get("LOCALAPPDATA")
-        if local:
-            roots.append(str(Path(local) / "Programs"))
-        for root in roots:
-            if not root:
-                continue
-            candidates += [
-                Path(root) / "Calibre2" / "ebook-convert.exe",
-                Path(root) / "Calibre" / "ebook-convert.exe",
-            ]
     else:
         candidates += [
             Path("/usr/bin/ebook-convert"),
@@ -343,7 +311,7 @@ def find_ebook_meta() -> str | None:
     if env and Path(env).is_file():
         return env
 
-    exe = shutil.which("ebook-meta") or shutil.which("ebook-meta.exe")
+    exe = shutil.which("ebook-meta")
     if exe:
         return exe
 
@@ -615,7 +583,7 @@ def ebook_to_pdf(ebook_convert, src: Path, pdf: Path, size: str,
 
     Calibre prints lines like "34% Running transforms on e-book..." as it
     works; when given, `on_progress(percent: int, message: str)` is called
-    for each such line so callers (the Electron backend) can surface live
+    for each such line so callers (the desktop backend) can surface live
     progress instead of just a spinner.
 
     `should_cancel`, if given, is called as `should_cancel()` after each
@@ -669,7 +637,7 @@ def plan_jobs(inputs: list[Path], device: str, ext: str,
 
     `on_skip`, if given, is called as `on_skip(src, reason)` for each input
     that isn't turned into a job (instead of printing to stdout/stderr) — used
-    by the Electron backend to report structured skip reasons to the UI.
+    by the desktop backend to report structured skip reasons to the UI.
     """
     def skip(src: Path, reason: str) -> None:
         if on_skip is not None:

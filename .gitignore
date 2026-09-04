@@ -3,8 +3,8 @@ __pycache__
 .DS_Store
 
 # Build artifacts (see packaging/pyinstaller/backend-server.spec and
-# electron/package.json for how to regenerate these; none of it is committed).
-electron/node_modules
-electron/dist
+# macos/scripts/build-app.sh; none of it is committed).
+macos/.build
+macos/.swiftpm
 packaging/build
 packaging/dist

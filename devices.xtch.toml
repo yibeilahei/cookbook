@@ -32,20 +32,14 @@ ascii_romanization = "japanese"
 page_compression = false
 font_size = 60
 
-# CJK fonts used when converting ebooks to PDF. Calibre looks these up by
-# family name on the local OS, so each platform has its own table.
-# Windows: Yu Mincho / Yu Gothic ship with the Japanese language pack.
-# Alternatives: MS Mincho, MS Gothic, Meiryo, Noto Serif/Sans CJK JP.
+# Fonts used when converting ebooks to PDF. Calibre looks these up by
+# family name on macOS.
+# Alternatives: Yu Mincho, Yu Gothic, Noto Serif/Sans CJK JP.
 
 [fonts.macos]
 serif = "Hiragino Mincho ProN"
 sans = "Hiragino Sans"
 mono = "Menlo"
-
-[fonts.windows]
-serif = "Yu Mincho"
-sans = "Yu Gothic"
-mono = "Consolas"
 
 [devices.x3]
 label = "Xteink X3"          # 3.7", ~250 PPI

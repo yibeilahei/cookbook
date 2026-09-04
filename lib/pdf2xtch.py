@@ -261,7 +261,7 @@ def _write_book(out_path: str, pdf_path: str, doc: fitz.Document, page_indices: 
     `page_indices` (page 1 == page_indices[0]).
 
     `on_page`, if given, is called as `on_page(n, page_count)` after each
-    page is rendered (1-based `n`), so callers (the Electron backend) can
+    page is rendered (1-based `n`), so callers (the desktop backend) can
     surface live packing progress instead of just a spinner.
 
     `should_cancel`, if given, is called as `should_cancel()` after each
@@ -406,13 +406,6 @@ def convert(pdf_path: str, out_path: str, supersample: int, read_direction: int,
 
 
 def main() -> None:
-    if sys.platform == "win32":
-        for stream in (sys.stdout, sys.stderr):
-            try:
-                stream.reconfigure(encoding="utf-8", errors="replace")
-            except (AttributeError, OSError):
-                pass
-
     parser = argparse.ArgumentParser(description="Convert a PDF to a .xtch book.")
     parser.add_argument("pdf", help="Input PDF path")
     parser.add_argument("-o", "--output", help="Output .xtch path (default: alongside PDF)")

@@ -1,4 +1,4 @@
-"""Conversion job execution, driven by the Electron UI over the backend
+"""Conversion job execution, driven by the desktop UI over the backend
 protocol (see server.py). This mirrors what the old toxtch.py/topdf.py CLI
 used to do, but reports progress via a callback instead of printing to a
 TTY, and collects structured results instead of exiting the process on the

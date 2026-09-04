@@ -1,23 +1,22 @@
 # cookbook
 
-Desktop app (macOS and Windows) that converts ebooks/PDFs for eink readers:
+Desktop app (macOS) that converts ebooks/PDFs for eink readers:
 
 - **`.xtch`** output (Xteink / CrossPoint devices)
 - **Panel-sized PDF** output (Kindle, Sony DPT, …)
 
-Under the hood it's an Electron UI driving a Python backend (Calibre does
+Under the hood it's a SwiftUI Mac app driving a Python backend (Calibre does
 ebook → PDF conversion; a bundled packer turns PDFs into `.xtch`).
 
 ## Install
 
-Builds are unsigned (no Apple Developer ID, no Authenticode cert). Install
-with the commands below — a browser download of the `.dmg` / `.exe` will
-be blocked by Gatekeeper or SmartScreen.
+Builds are unsigned (no Apple Developer ID). Install with the command
+below — a browser download of the `.dmg` will be blocked by Gatekeeper.
 
 Calibre is required for ebook → PDF conversion (not for PDF → `.xtch`).
 Skip its line if it is already installed.
 
-**macOS** — paste in Terminal:
+Paste in Terminal:
 
 ```sh
 brew install --cask calibre
@@ -27,49 +26,29 @@ brew install --cask calibre
 Copies `Cookbook.app` to `~/Applications` and opens it. After that, launch
 it from there (or drag it to `/Applications`).
 
-**Windows** — paste in PowerShell or cmd:
-
-```powershell
-winget install -e --id calibre.calibre
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/yibeilahei/cookbook/main/install.ps1 | iex"
-```
-
-Copies Cookbook to `%LOCALAPPDATA%\Programs\Cookbook` and opens it. After
-that, launch it from the Start menu.
-
 ## Setup (running from source)
 
-Python 3.11+ and Node 20+ recommended.
+Python 3.11+ and the macOS Command Line Tools (or Xcode) recommended.
 
 ```sh
 pip install -r requirements.txt
-cd electron && npm install
 ```
 
 Calibre is a desktop app (not a pip package) and is required for ebook → PDF
 conversion. Converting an existing PDF to `.xtch` does not need it.
 
-**macOS**
-
 ```sh
 brew install --cask calibre
 ```
 
-**Windows**
-
-```powershell
-winget install -e --id calibre.calibre
-```
-
 Or download the installer from https://calibre-ebook.com. If the app can't
 find Calibre after installing, set `EBOOK_CONVERT` to the `ebook-convert`
-binary (usually under `/Applications/calibre.app/Contents/MacOS/` on macOS or
-`C:\Program Files\Calibre2\` on Windows).
+binary (usually under `/Applications/calibre.app/Contents/MacOS/`).
 
 ## Running
 
 ```sh
-cd electron && npm start
+cd macos && swift run
 ```
 
 Drag and drop ebooks/PDFs (or whole folders) into the window, pick a mode
@@ -80,21 +59,17 @@ folder you pick.
 ## Building a distributable app
 
 PyInstaller doesn't cross-compile, so the Python backend must be frozen on
-each OS you're targeting before packaging the Electron app:
+macOS before packaging the app:
 
 ```sh
 pip install -r requirements.txt -r requirements-dev.txt
 pyinstaller packaging/pyinstaller/backend-server.spec \
     --distpath packaging/dist --workpath packaging/build --noconfirm
-
-cd electron
-npm ci
-npm run dist:mac    # -> electron/dist/*.dmg (run this leg on macOS)
-npm run dist:win    # -> electron/dist/*.exe and *.zip (run this leg on Windows)
+macos/scripts/build-app.sh    # -> packaging/dist/Cookbook.app and *.dmg
 ```
 
-`.github/workflows/release-desktop.yml` runs both legs on a `macos-latest` /
-`windows-latest` CI matrix when a `v*.*.*` tag is pushed.
+`.github/workflows/release-desktop.yml` runs this on `macos-latest` when a
+`v*.*.*` tag is pushed.
 
 ## Adding or changing devices
 
@@ -162,8 +137,8 @@ editable from the in-app Settings panel.
   first). Named for what it controls (ASCII-safety), not a language
   selection — it's a byproduct of the `language` setting above, not a
   separate user-facing language choice.
-- `[fonts.macos]` / `[fonts.windows]` set the CJK fonts used for ebook → PDF
-  conversion on each OS. Change these if a family is not installed.
+- `[fonts.macos]` sets the fonts used for ebook → PDF conversion. Change
+  these if a family is not installed.
 
 Low-level packer, for scripting (already a PDF, skips the app entirely):
 `python -m lib.pdf2xtch book.pdf`. Pass `--page-compression` to turn

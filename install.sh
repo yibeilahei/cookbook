@@ -16,7 +16,7 @@ ohai()  { printf "\033[1;34m==>\033[0m %s\n" "$*"; }
 abort() { printf "\033[1;31mError:\033[0m %s\n" "$*" >&2; exit 1; }
 
 if [ "$(uname -s)" != "Darwin" ]; then
-  abort "This installer is for macOS. On Windows, paste: powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/${REPO}/main/install.ps1 | iex\""
+  abort "This installer is for macOS."
 fi
 
 need() { command -v "$1" >/dev/null 2>&1 || abort "missing required command: $1"; }

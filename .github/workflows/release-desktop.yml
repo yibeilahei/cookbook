@@ -1,11 +1,11 @@
 name: Release desktop app
 
-# Builds the Electron app for macOS and Windows and publishes the installers
-# to a GitHub Release whenever a version tag (e.g. v0.1.0) is pushed.
+# Builds the SwiftUI Mac app (with a frozen Python backend) and publishes
+# the disk image to a GitHub Release whenever a version tag (e.g. v0.1.0)
+# is pushed.
 #
-# Builds are unsigned: no Apple Developer ID / notarization, no Authenticode
-# cert. Users should install with install.sh (macOS) or install.ps1 (Windows)
-# so browser quarantine / Mark of the Web never attaches. See the README.
+# Builds are unsigned: no Apple Developer ID / notarization. Users should
+# install with install.sh so browser quarantine never attaches. See the README.
 
 on:
   push:
@@ -16,34 +16,14 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            dist_script: dist:mac
-            artifact_glob: electron/dist/*.dmg
-            artifact_name: cookbook-macos
-          - os: windows-latest
-            dist_script: dist:win
-            artifact_glob: |
-              electron/dist/*.exe
-              electron/dist/*.zip
-            artifact_name: cookbook-windows
-
-    runs-on: ${{ matrix.os }}
-
+  release:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
@@ -53,31 +33,12 @@ jobs:
           pyinstaller packaging/pyinstaller/backend-server.spec
           --distpath packaging/dist --workpath packaging/build --noconfirm
 
-      - name: Install Electron dependencies
-        working-directory: electron
-        run: npm ci
-
-      - name: Build the Electron app
-        working-directory: electron
-        run: npm run ${{ matrix.dist_script }}
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_glob }}
-          if-no-files-found: error
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
+      - name: Build Cookbook.app and disk image
+        run: macos/scripts/build-app.sh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: packaging/dist/*.dmg
           generate_release_notes: true
           draft: false

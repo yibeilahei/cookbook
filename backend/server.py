@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""JSON-lines backend for the Electron UI.
+"""JSON-lines backend for the SwiftUI Mac app.
 
-Spawned as a child process by Electron's main process and killed when the
-app quits (see conversation/plan history: "Model A"). Talks a line-delimited
-JSON protocol over stdio:
+Spawned as a child process by the app and killed when it quits. Talks a
+line-delimited JSON protocol over stdio:
 
     Request   {"id": <int>, "cmd": "<name>", ...params}
     Response  {"id": <int>, "ok": true, "result": ...}
@@ -58,7 +57,7 @@ shutdown       {}                                    -> {} (then the process exi
 
 IMPORTANT: lib.common / lib.pdf2xtch call print() directly (progress/log
 messages meant for a human at a terminal). Left alone, those would land on
-stdout and corrupt this JSON-lines protocol, since Electron parses stdout
+stdout and corrupt this JSON-lines protocol, since the UI parses stdout
 line-by-line as JSON. So immediately below we swap sys.stdout for sys.stderr
 process-wide, and use `_STDOUT` (the real, original stream) exclusively for
 protocol I/O.
@@ -283,7 +282,7 @@ def main() -> None:
     parser.add_argument(
         "--user-config-dir", required=True,
         help="Writable directory for in-app device config edits "
-             "(Electron's userData path)")
+             "(the app's Application Support path)")
     args = parser.parse_args()
     device_config.set_user_dir(args.user_config_dir)
 

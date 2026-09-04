@@ -1,11 +1,12 @@
 """User-writable device config management.
 
 The repo ships devices.xtch.toml / devices.pdf.toml as read-only defaults
-(see lib.common.config_path). The Electron app instead needs a place it can
+(see lib.common.config_path). The desktop app instead needs a place it can
 write in-app device edits that survives app updates/reinstalls, so on first
-use for a given kind we seed a user-writable copy under a directory Electron
-controls (its `userData` path) and read/write that copy from then on. The
-bundled defaults themselves are never modified.
+use for a given kind we seed a user-writable copy under a directory the app
+controls (`~/Library/Application Support/Cookbook/device-config`) and
+read/write that copy from then on. The bundled defaults themselves are
+never modified.
 """
 
 from __future__ import annotations

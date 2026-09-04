@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for backend/server.py (the Electron app's JSON-protocol
+"""PyInstaller spec for backend/server.py (the Mac app's JSON-protocol
 conversion worker).
 
 Build from the repo root, with the project venv activated and PyInstaller
@@ -9,13 +9,11 @@ installed (`pip install -r requirements.txt pyinstaller`):
         --distpath packaging/dist --workpath packaging/build --noconfirm
 
 Produces packaging/dist/backend-server/ (a onedir build: the frozen
-"backend-server"/"backend-server.exe" executable next to its bundled Python
-runtime, native libs, and resources). electron-builder later copies this
-whole folder into the app bundle as extraResources.
+"backend-server" executable next to its bundled Python runtime, native
+libs, and resources). macos/scripts/build-app.sh later copies this whole
+folder into Cookbook.app as Contents/Resources/backend.
 
-PyInstaller does not cross-compile: this must be run once on macOS (for the
-macOS app) and once on Windows (for the Windows app), e.g. as two legs of a
-CI matrix.
+PyInstaller does not cross-compile: this must be run on macOS.
 """
 
 from pathlib import Path
@@ -26,7 +24,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 REPO_ROOT = Path(SPECPATH).resolve().parent.parent
 
 # Bundled as fallback defaults; backend/config.py copies these into the
-# user-writable config dir (Electron's userData) on first run, and reads
+# user-writable config dir (Application Support) on first run, and reads
 # lib.common.config_path(), which resolves relative to ROOT = the frozen
 # bundle's own root -- so these must land next to the "lib" package below,
 # not in a "data" subfolder.
