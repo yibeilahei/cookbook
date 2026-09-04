@@ -29,8 +29,13 @@ struct InputFile: Identifiable, Hashable {
     var message: String?
     var percent: Double?
     var detectedLanguage: String?
+    var outputPath: String?
     var id: String { path }
     var name: String { URL(fileURLWithPath: path).lastPathComponent }
+    var canPreviewXtch: Bool {
+        guard let outputPath else { return false }
+        return URL(fileURLWithPath: outputPath).pathExtension.lowercased() == "xtch"
+    }
 }
 
 struct PreviewSession: Identifiable {
@@ -84,6 +89,8 @@ final class AppModel {
     private var started = false
     private var ignoreSaves = false
     private var settingsStatusReset: Task<Void, Never>?
+    private var convertingPaths: Set<String> = []
+    private var queuedConvertPaths: [String] = []
 
     var isXtch: Bool { mode == .xtch }
     var romanizeEnabled: Bool { BookLanguage.romanizable.contains(language) }
@@ -188,10 +195,18 @@ final class AppModel {
             }
             if !newFiles.isEmpty {
                 await detectAndApplyLanguage(newFiles)
+                await convert(paths: newFiles)
             }
         } catch {
             convertStatus = L10n.t("errorMsg", ["msg": error.localizedDescription])
         }
+    }
+
+    func isConverting(_ path: String) -> Bool {
+        converting && convertingPaths.contains(path)
+            && files.first(where: { $0.path == path }).map {
+                $0.stage != "done" && $0.stage != "error" && $0.stage != "cancelled"
+            } ?? false
     }
 
     func removeFile(_ path: String) {
@@ -241,35 +256,52 @@ final class AppModel {
         }
     }
 
-    func convert() async {
-        guard !files.isEmpty else {
-            convertStatus = L10n.t("addFileFirst")
-            return
+    func convert(paths: [String]? = nil) async {
+        let targets = (paths ?? files.map(\.path)).filter { path in
+            files.contains { $0.path == path && $0.stage != "done" }
         }
+        guard !targets.isEmpty else { return }
         guard !selectedDevice.isEmpty else {
             convertStatus = L10n.t("selectDeviceFirst")
             return
         }
+        if converting {
+            queuedConvertPaths.append(contentsOf: targets.filter { !queuedConvertPaths.contains($0) })
+            return
+        }
         converting = true
+        convertingPaths = Set(targets)
         convertStatus = L10n.t("converting")
         showBatch = false
         batchCompleted = 0
         batchTotal = 0
         batchPercent = 0
         batchEta = ""
-        for i in files.indices {
+        for i in files.indices where convertingPaths.contains(files[i].path) {
             files[i].stage = nil
             files[i].message = nil
             files[i].percent = nil
+            files[i].outputPath = nil
         }
         var params: [String: Any] = [
             "kind": mode.rawValue,
             "device": selectedDevice,
-            "paths": files.map(\.path),
+            "paths": targets,
         ]
         if let outputDir { params["output_dir"] = outputDir }
         do {
             let result = try await backend.callDict("convert", params)
+            if let doneList = result["done"] as? [Any] {
+                for item in doneList {
+                    guard let dict = asStringDict(item),
+                          let file = dict["file"] as? String,
+                          let output = dict["output"] as? String,
+                          let idx = files.firstIndex(where: { $0.path == file }) else { continue }
+                    files[idx].outputPath = output
+                    files[idx].stage = "done"
+                    files[idx].percent = 100
+                }
+            }
             let done = (result["done"] as? [Any])?.count ?? 0
             let skipped = (result["skipped"] as? [Any])?.count ?? 0
             let errors = (result["errors"] as? [Any])?.count ?? 0
@@ -285,6 +317,12 @@ final class AppModel {
             convertStatus = L10n.t("errorMsg", ["msg": error.localizedDescription])
         }
         converting = false
+        convertingPaths = []
+        let queued = queuedConvertPaths
+        queuedConvertPaths = []
+        if !queued.isEmpty {
+            await convert(paths: queued)
+        }
     }
 
     func cancel() async {
@@ -292,14 +330,11 @@ final class AppModel {
         _ = try? await backend.callDict("cancel")
     }
 
-    func openPreview(_ path: String) async {
-        guard !selectedDevice.isEmpty else {
-            convertStatus = L10n.t("selectDeviceFirst")
-            return
-        }
-        let name = URL(fileURLWithPath: path).lastPathComponent
+    func openPreview(_ file: InputFile) async {
+        guard file.canPreviewXtch, let xtch = file.outputPath else { return }
+        let name = URL(fileURLWithPath: xtch).lastPathComponent
         preview = PreviewSession(
-            path: path,
+            path: xtch,
             title: L10n.t("previewTitleFor", ["name": name]),
             status: L10n.t("renderingPages", ["n": "15"])
         )
@@ -307,7 +342,7 @@ final class AppModel {
             let result = try await backend.callDict("preview", [
                 "kind": mode.rawValue,
                 "device": selectedDevice,
-                "path": path,
+                "path": xtch,
                 "max_pages": 15,
             ])
             let previewed = jsonInt(result["previewed"]) ?? 0
@@ -317,7 +352,7 @@ final class AppModel {
             for url in pages {
                 if let image = NSImage.fromDataURL(url) { images.append(image) }
             }
-            if var session = preview, session.path == path {
+            if var session = preview, session.path == xtch {
                 session.images = images
                 session.status = L10n.t("showingPages", [
                     "shown": "\(previewed)",
@@ -327,7 +362,7 @@ final class AppModel {
                 preview = session
             }
         } catch {
-            if var session = preview, session.path == path {
+            if var session = preview, session.path == xtch {
                 session.status = L10n.t("errorMsg", ["msg": error.localizedDescription])
                 preview = session
             }
@@ -475,6 +510,9 @@ final class AppModel {
         files[idx].message = msg["message"] as? String
         if stage == "done" {
             files[idx].percent = 100
+            if let dest = msg["message"] as? String, !dest.isEmpty {
+                files[idx].outputPath = dest
+            }
         } else if stage == "error" {
             files[idx].percent = 0
         } else if let percent = jsonDouble(msg["percent"]) {

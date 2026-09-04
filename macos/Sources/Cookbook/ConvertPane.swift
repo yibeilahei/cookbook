@@ -57,21 +57,10 @@ struct ConvertPane: View {
                 }
             }
 
-            HStack {
-                Button(L10n.t("convert")) {
-                    Task { await model.convert() }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(model.converting)
-                if model.converting {
-                    Button(L10n.t("cancel")) {
-                        Task { await model.cancel() }
-                    }
-                }
+            if !model.convertStatus.isEmpty {
                 Text(model.convertStatus)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
-                Spacer()
             }
         }
         .padding(16)
@@ -122,11 +111,20 @@ struct ConvertPane: View {
                 FileRow(file: file)
                     .tag(file.path)
                     .contextMenu {
-                        Button(L10n.t("previewBtn")) {
-                            Task { await model.openPreview(file.path) }
+                        if model.isConverting(file.path) {
+                            Button(L10n.t("cancel")) {
+                                Task { await model.cancel() }
+                            }
                         }
-                        Button(L10n.t("delete"), role: .destructive) {
-                            model.removeFile(file.path)
+                        if model.isXtch && file.canPreviewXtch {
+                            Button(L10n.t("previewBtn")) {
+                                Task { await model.openPreview(file) }
+                            }
+                        }
+                        if !model.isConverting(file.path) {
+                            Button(L10n.t("delete"), role: .destructive) {
+                                model.removeFile(file.path)
+                            }
                         }
                     }
             }
@@ -182,18 +180,28 @@ private struct FileRow: View {
                         .background(stageColor(stage).opacity(0.2), in: Capsule())
                         .help(file.message ?? "")
                 }
-                Button(L10n.t("previewBtn")) {
-                    Task { await model.openPreview(file.path) }
+                if model.isConverting(file.path) {
+                    Button(L10n.t("cancel")) {
+                        Task { await model.cancel() }
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
-                Button {
-                    model.removeFile(file.path)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                if model.isXtch && file.canPreviewXtch {
+                    Button(L10n.t("previewBtn")) {
+                        Task { await model.openPreview(file) }
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
-                .help(L10n.t("delete"))
+                if !model.isConverting(file.path) {
+                    Button {
+                        model.removeFile(file.path)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(L10n.t("delete"))
+                }
             }
             ProgressView(value: (file.percent ?? 0) / 100)
                 .progressViewStyle(.linear)

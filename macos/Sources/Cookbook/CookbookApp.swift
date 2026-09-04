@@ -24,11 +24,6 @@ struct CookbookApp: App {
                     .keyboardShortcut("o")
             }
             CommandMenu(L10n.t("convert")) {
-                Button(L10n.t("convert")) {
-                    Task { await model.convert() }
-                }
-                .keyboardShortcut("r")
-                .disabled(model.converting)
                 Button(L10n.t("cancel")) {
                     Task { await model.cancel() }
                 }

@@ -144,6 +144,69 @@ def render_page(page: fitz.Page, supersample: int, width: int, height: int) -> n
     return np.asarray(canvas, dtype=np.uint8)
 
 
+def unpack_xth_page(page_bytes: bytes) -> np.ndarray:
+    """Inverse of pack_page + quantize_to_xth: XTH page bytes -> (H, W) uint8 gray."""
+    if len(page_bytes) < XTH_PAGE_HEADER_SIZE:
+        raise ValueError("truncated XTH page")
+    magic, width, height, _reserved, compression, data_size, _pad = struct.unpack_from(
+        XTH_PAGE_HEADER_FMT, page_bytes)
+    if magic != XTH_MAGIC:
+        raise ValueError("invalid XTH page magic")
+    body = page_bytes[XTH_PAGE_HEADER_SIZE:XTH_PAGE_HEADER_SIZE + data_size]
+    if len(body) < data_size:
+        raise ValueError("truncated XTH page body")
+    if compression == 1:
+        body = zlib.decompress(body, -15)
+    elif compression != 0:
+        raise ValueError(f"unsupported XTH compression {compression}")
+    col_bytes = (height + 7) // 8
+    plane_size = width * col_bytes
+    if len(body) < plane_size * 2:
+        raise ValueError("XTH page body shorter than plane data")
+    plane1 = np.frombuffer(body[:plane_size], dtype=np.uint8).reshape(width, col_bytes)
+    plane2 = np.frombuffer(body[plane_size:plane_size * 2], dtype=np.uint8).reshape(
+        width, col_bytes)
+    bit1 = np.unpackbits(plane1, axis=1)[:, :height]
+    bit2 = np.unpackbits(plane2, axis=1)[:, :height]
+    pv = (bit1.T[:, ::-1].astype(np.uint8) << 1) | bit2.T[:, ::-1].astype(np.uint8)
+    return np.select(
+        [pv == 0, pv == 2, pv == 1],
+        [255, 170, 85],
+        default=0,
+    ).astype(np.uint8)
+
+
+def render_xtch_preview(xtch_path: str, max_pages: int) -> tuple[list, int]:
+    """Unpack up to `max_pages` XTH pages from an XTCH file as PNG bytes.
+
+    Returns (png_bytes_per_page, total_page_count). Used by the in-app
+    preview after a conversion has produced a .xtch.
+    """
+    with open(xtch_path, "rb") as f:
+        header = f.read(HEADER_SIZE)
+        if len(header) < HEADER_SIZE:
+            raise ValueError(f"not an XTCH file: {xtch_path}")
+        fields = struct.unpack(HEADER_FMT, header)
+        magic, page_count, page_table_off = fields[0], fields[3], fields[10]
+        if magic != XTCH_MAGIC:
+            raise ValueError(f"not an XTCH file: {xtch_path}")
+        if page_count == 0:
+            return [], 0
+        f.seek(page_table_off)
+        table = f.read(page_count * PAGE_TABLE_ENTRY_SIZE)
+        n = min(max_pages, page_count) if max_pages > 0 else page_count
+        pages = []
+        for i in range(n):
+            offset, size, _width, _height = struct.unpack_from(
+                PAGE_TABLE_ENTRY_FMT, table, i * PAGE_TABLE_ENTRY_SIZE)
+            f.seek(offset)
+            gray = unpack_xth_page(f.read(size))
+            buf = io.BytesIO()
+            Image.fromarray(gray, mode="L").save(buf, format="PNG")
+            pages.append(buf.getvalue())
+        return pages, page_count
+
+
 def preview_png_bytes(gray: np.ndarray, quantize: bool) -> bytes:
     """Encode a rendered page (see render_page) as PNG bytes for the UI.
 

@@ -157,15 +157,12 @@ def run(kind: str, config: dict, device: str, paths: list[str],
 
 def preview(kind: str, config: dict, device: str, path: str,
             on_progress: Optional[ProgressFn] = None, max_pages: int = 15) -> dict:
-    """Render up to `max_pages` pages of `path` (as it would look on
-    `device` under `kind`) for an in-app preview, without writing anything
-    into the user's chosen output location.
+    """Render up to `max_pages` pages of `path` for an in-app preview.
 
-    If `path` isn't already a PDF, it's converted first via Calibre into a
-    throwaway temp file (cleaned up before returning), same as a real
-    conversion's first stage -- so previewing costs about the same as
-    running "convert" up through that stage, just without the page-packing
-    stage after it.
+    `.xtch` paths are unpacked from the already-converted book (the UI only
+    offers preview after a successful .xtch conversion). Anything else is
+    rendered as it would look on `device` under `kind`, converting via
+    Calibre first when `path` isn't already a PDF.
 
     Returns {"page_count": <total pages in the book>,
              "previewed": <how many were actually rendered>,
@@ -173,16 +170,21 @@ def preview(kind: str, config: dict, device: str, path: str,
     """
     import shutil
     import tempfile
-    from lib.pdf2xtch import render_preview
+    from lib.pdf2xtch import render_preview, render_xtch_preview
+
+    src = Path(path).resolve()
+    if not src.is_file():
+        raise ValueError(f"Not a file: {src}")
+    if src.suffix.lower() == ".xtch":
+        if on_progress is not None:
+            on_progress(str(src), "pack", "Rendering preview pages", 0)
+        pages, page_count = render_xtch_preview(str(src), max_pages)
+        return {"page_count": page_count, "previewed": len(pages), "pages": pages}
 
     if device not in config.get("devices", {}):
         raise ValueError(f"Unknown device '{device}'.")
     dev = config["devices"][device]
     width, height, supersample, size = common.panel_size(dev, device)
-
-    src = Path(path).resolve()
-    if not src.is_file():
-        raise ValueError(f"Not a file: {src}")
 
     tmp_dir = None
     try:
