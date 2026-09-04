@@ -14,17 +14,39 @@ enum L10n {
     }
 
     private static func load() -> [String: [String: String]] {
-        let urls = [
-            Bundle.module.url(forResource: "strings", withExtension: "json"),
-            Bundle.main.url(forResource: "strings", withExtension: "json"),
-        ].compactMap { $0 }
-        for url in urls {
+        for url in stringsCandidates() {
             if let data = try? Data(contentsOf: url),
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: [String: String]] {
                 return obj
             }
         }
         return [:]
+    }
+
+    /// Do not use `Bundle.module`: SwiftPM's accessor looks for
+    /// `Cookbook.app/Cookbook_Cookbook.bundle` and `fatalError`s in a packaged app.
+    private static func stringsCandidates() -> [URL] {
+        var dirs: [URL] = []
+        if let resources = Bundle.main.resourceURL { dirs.append(resources) }
+        dirs.append(Bundle.main.bundleURL)
+        dirs.append(Bundle.main.bundleURL.appendingPathComponent("Contents/Resources"))
+        let exeDir = URL(fileURLWithPath: CommandLine.arguments[0])
+            .standardized.deletingLastPathComponent()
+        dirs.append(exeDir)
+
+        var urls: [URL] = []
+        if let url = Bundle.main.url(forResource: "strings", withExtension: "json") {
+            urls.append(url)
+        }
+        for dir in dirs {
+            urls.append(dir.appendingPathComponent("strings.json"))
+            urls.append(dir.appendingPathComponent("Cookbook_Cookbook.bundle/strings.json"))
+        }
+        var seen = Set<String>()
+        return urls.filter { url in
+            seen.insert(url.path).inserted
+                && FileManager.default.isReadableFile(atPath: url.path)
+        }
     }
 
     private static func detectUiLanguage() -> String {

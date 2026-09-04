@@ -30,11 +30,14 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/${APP_NAME}"
 cp "$MACOS/Info.plist" "$APP/Contents/Info.plist"
 
-# SwiftPM resource bundle (strings.json). Name is <target>_<module>.bundle.
-BUNDLE_NAME="Cookbook_Cookbook.bundle"
-if [ -d "$BIN_DIR/$BUNDLE_NAME" ]; then
-  cp -R "$BIN_DIR/$BUNDLE_NAME" "$APP/Contents/Resources/$BUNDLE_NAME"
+# UI strings: copy the file into Contents/Resources so Bundle.main can load it.
+# Do not rely on SwiftPM's Bundle.module — that accessor looks for
+# Cookbook.app/Cookbook_Cookbook.bundle and crashes the packaged app.
+STRINGS="$BIN_DIR/Cookbook_Cookbook.bundle/strings.json"
+if [ ! -f "$STRINGS" ]; then
+  STRINGS="$MACOS/Sources/Cookbook/Resources/strings.json"
 fi
+cp "$STRINGS" "$APP/Contents/Resources/strings.json"
 
 ohai "Ad-hoc signing…"
 codesign --deep --force --sign - "$APP"
