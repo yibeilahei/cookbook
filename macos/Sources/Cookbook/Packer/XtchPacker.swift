@@ -1,4 +1,4 @@
-import AppKit
+import CoreGraphics
 import Foundation
 import PDFKit
 import Accelerate
@@ -18,17 +18,13 @@ enum XtchPacker {
         if options.height % 8 != 0 {
             throw XtchError.message("height \(options.height) must be a multiple of 8")
         }
-        guard let doc = PDFDocument(url: pdfURL) else {
+        let meta = try readMetadata(pdfURL: pdfURL)
+        let pageCount = meta.pageCount
+        // CGPDFPage drawing is thread-safe. PDFKit/AppKit rasterization on this
+        // queue deadlocks when the UI presents NSOpenPanel on the main thread.
+        guard let cgDoc = CGPDFDocument(pdfURL as CFURL) else {
             throw XtchError.message("Could not open PDF: \(pdfURL.path)")
         }
-        let pageCount = doc.pageCount
-        if pageCount == 0 { throw XtchError.message("\(pdfURL.path) has no pages") }
-        if pageCount > 0xFFFF { throw XtchError.message("\(pageCount) pages exceeds the 65535 limit") }
-
-        let attrs = doc.documentAttributes ?? [:]
-        let title = attrs[PDFDocumentAttribute.titleAttribute] as? String ?? ""
-        let author = attrs[PDFDocumentAttribute.authorAttribute] as? String ?? ""
-        let chapters = chapters(from: doc, pageCount: pageCount)
 
         try FileManager.default.createDirectory(
             at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -44,7 +40,7 @@ enum XtchPacker {
             if options.shouldCancel?() == true { return }
             do {
                 pageBodies[i] = try renderPageBody(
-                    doc: doc, pageIndex: i, options: options)
+                    doc: cgDoc, pageIndex: i, options: options)
                 errorLock.lock()
                 completed += 1
                 let n = completed
@@ -75,11 +71,34 @@ enum XtchPacker {
 
         try writeContainer(
             destURL: destURL, pageBodies: pageBodies, width: options.width,
-            height: options.height, chapters: chapters, title: title, author: author)
+            height: options.height, chapters: meta.chapters, title: meta.title, author: meta.author)
     }
 
-    private static func renderPageBody(doc: PDFDocument, pageIndex: Int, options: Options) throws -> Data {
-        guard let page = doc.page(at: pageIndex) else {
+    private struct PDFMeta {
+        var pageCount: Int
+        var title: String
+        var author: String
+        var chapters: [XtchChapter]
+    }
+
+    /// PDFKit for outlines/attributes only, and only on the caller thread.
+    private static func readMetadata(pdfURL: URL) throws -> PDFMeta {
+        guard let doc = PDFDocument(url: pdfURL) else {
+            throw XtchError.message("Could not open PDF: \(pdfURL.path)")
+        }
+        let pageCount = doc.pageCount
+        if pageCount == 0 { throw XtchError.message("\(pdfURL.path) has no pages") }
+        if pageCount > 0xFFFF { throw XtchError.message("\(pageCount) pages exceeds the 65535 limit") }
+        let attrs = doc.documentAttributes ?? [:]
+        return PDFMeta(
+            pageCount: pageCount,
+            title: attrs[PDFDocumentAttribute.titleAttribute] as? String ?? "",
+            author: attrs[PDFDocumentAttribute.authorAttribute] as? String ?? "",
+            chapters: chapters(from: doc, pageCount: pageCount))
+    }
+
+    private static func renderPageBody(doc: CGPDFDocument, pageIndex: Int, options: Options) throws -> Data {
+        guard let page = doc.page(at: pageIndex + 1) else {
             throw XtchError.message("Missing PDF page \(pageIndex + 1)")
         }
         let gray = try rasterize(page: page, supersample: options.supersample)
@@ -109,41 +128,55 @@ enum XtchPacker {
         var rowBytes: Int
     }
 
-    private static func rasterize(page: PDFPage, supersample: Int) throws -> GrayBuf {
-        let box = page.bounds(for: .mediaBox)
+    private static func rasterize(page: CGPDFPage, supersample: Int) throws -> GrayBuf {
+        let box = page.getBoxRect(.mediaBox)
+        let rotation = page.rotationAngle
+        let swapped = rotation == 90 || rotation == 270
+        let pageW = abs(swapped ? box.height : box.width)
+        let pageH = abs(swapped ? box.width : box.height)
         let scale = CGFloat(max(supersample, 1))
-        let pixelW = max(1, Int((box.width * scale).rounded()))
-        let pixelH = max(1, Int((box.height * scale).rounded()))
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: pixelW, pixelsHigh: pixelH,
-            bitsPerSample: 8, samplesPerPixel: 1, hasAlpha: false, isPlanar: false,
-            colorSpaceName: .deviceWhite, bytesPerRow: 0, bitsPerPixel: 8
-        ) else {
-            throw XtchError.message("Could not allocate page bitmap")
+        let pixelW = max(1, Int((pageW * scale).rounded()))
+        let pixelH = max(1, Int((pageH * scale).rounded()))
+        let rowBytes = (pixelW + 15) & ~15
+        var pixels = [UInt8](repeating: 255, count: rowBytes * pixelH)
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        var drawError: Error?
+        pixels.withUnsafeMutableBytes { raw in
+            guard let data = raw.baseAddress else {
+                drawError = XtchError.message("Could not allocate page bitmap")
+                return
+            }
+            guard let ctx = CGContext(
+                data: data,
+                width: pixelW,
+                height: pixelH,
+                bitsPerComponent: 8,
+                bytesPerRow: rowBytes,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else {
+                drawError = XtchError.message("Could not create graphics context")
+                return
+            }
+            ctx.setFillColor(gray: 1, alpha: 1)
+            ctx.fill(CGRect(x: 0, y: 0, width: pixelW, height: pixelH))
+            // Same CTM as the previous PDFPage.draw path: flip into bitmap space, then
+            // scale, then map the (possibly rotated) media box into point space.
+            ctx.translateBy(x: 0, y: CGFloat(pixelH))
+            ctx.scaleBy(x: scale, y: -scale)
+            let dest = CGRect(x: 0, y: 0, width: pageW, height: pageH)
+            ctx.concatenate(page.getDrawingTransform(.mediaBox, rect: dest, rotate: 0, preserveAspectRatio: false))
+            ctx.drawPDFPage(page)
         }
-        NSGraphicsContext.saveGraphicsState()
-        defer { NSGraphicsContext.restoreGraphicsState() }
-        guard let gc = NSGraphicsContext(bitmapImageRep: rep) else {
-            throw XtchError.message("Could not create graphics context")
+        if let drawError { throw drawError }
+        // Bitmap row 0 is the bottom of the page. packPlanes / XTH use y = 0 as the top.
+        var topFirst = [UInt8](repeating: 0, count: pixelW * pixelH)
+        for y in 0..<pixelH {
+            let srcOff = (pixelH - 1 - y) * rowBytes
+            let dstOff = y * pixelW
+            topFirst.replaceSubrange(dstOff..<(dstOff + pixelW), with: pixels[srcOff..<(srcOff + pixelW)])
         }
-        NSGraphicsContext.current = gc
-        let ctx = gc.cgContext
-        ctx.setFillColor(gray: 1, alpha: 1)
-        ctx.fill(CGRect(x: 0, y: 0, width: pixelW, height: pixelH))
-        ctx.saveGState()
-        ctx.translateBy(x: 0, y: CGFloat(pixelH))
-        ctx.scaleBy(x: scale, y: -scale)
-        ctx.translateBy(x: -box.origin.x, y: -box.origin.y)
-        page.draw(with: .mediaBox, to: ctx)
-        ctx.restoreGState()
-
-        let row = rep.bytesPerRow
-        guard let base = rep.bitmapData else { throw XtchError.message("Empty bitmap") }
-        var pixels = [UInt8](repeating: 0, count: row * pixelH)
-        pixels.withUnsafeMutableBytes { dst in
-            dst.copyMemory(from: UnsafeRawBufferPointer(start: base, count: row * pixelH))
-        }
-        return GrayBuf(pixels: pixels, width: pixelW, height: pixelH, rowBytes: row)
+        return GrayBuf(pixels: topFirst, width: pixelW, height: pixelH, rowBytes: pixelW)
     }
 
     private static func fitToPanel(_ src: [UInt8], srcWidth: Int, srcHeight: Int, srcRow: Int,

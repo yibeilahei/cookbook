@@ -40,6 +40,7 @@ final class AppModel {
     var expandedLogs: Set<String> = []
     private var reloadGeneration = 0
     private let packCancel = PackCancel()
+    private var filePanelOpen = false
 
     var isXtch: Bool { mode == .xtch }
 
@@ -98,11 +99,13 @@ final class AppModel {
         if let dir = UserDefaults.standard.string(forKey: "lastInputDir") {
             panel.directoryURL = URL(fileURLWithPath: dir)
         }
-        guard panel.runModal() == .OK else { return }
-        if let first = panel.urls.first {
-            UserDefaults.standard.set(Self.dirOf(first.path), forKey: "lastInputDir")
+        presentOpenPanel(panel) { [weak self] response in
+            guard let self, response == .OK else { return }
+            if let first = panel.urls.first {
+                UserDefaults.standard.set(Self.dirOf(first.path), forKey: "lastInputDir")
+            }
+            Task { await self.addPaths(panel.urls.map(\.path)) }
         }
-        Task { await addPaths(panel.urls.map(\.path)) }
     }
 
     func pickOutputDir() {
@@ -114,9 +117,11 @@ final class AppModel {
         let hint = files.first.map { Self.dirOf($0.path) }
             ?? UserDefaults.standard.string(forKey: "lastOutputDir")
         if let hint { panel.directoryURL = URL(fileURLWithPath: hint) }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        outputDir = url.path
-        UserDefaults.standard.set(url.path, forKey: "lastOutputDir")
+        presentOpenPanel(panel) { [weak self] response in
+            guard let self, response == .OK, let url = panel.url else { return }
+            self.outputDir = url.path
+            UserDefaults.standard.set(url.path, forKey: "lastOutputDir")
+        }
     }
 
     func clearOutputDir() {
@@ -369,11 +374,19 @@ final class AppModel {
                 let w = width, h = height, ss = supersample
                 try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
                     DispatchQueue.global(qos: .userInitiated).async {
+                        let uiLock = NSLock()
+                        var lastUI = Date.distantPast
                         do {
                             try XtchPacker.pack(pdfURL: pdfURL, destURL: destURL, options: .init(
                                 width: w, height: h, supersample: ss,
                                 pageCompression: compress,
                                 onPage: { n, total in
+                                    let now = Date()
+                                    uiLock.lock()
+                                    let send = n == 1 || n == total || now.timeIntervalSince(lastUI) >= 0.1
+                                    if send { lastUI = now }
+                                    uiLock.unlock()
+                                    guard send else { return }
                                     DispatchQueue.main.async {
                                         self.setPackProgress(path: path, page: n, total: total)
                                     }
@@ -416,7 +429,25 @@ final class AppModel {
         files[i].stage = "pack"
         files[i].percent = total > 0 ? Double(page) / Double(total) * 100 : 0
         files[i].message = "Packing page \(page)/\(total)"
-        appendLog(path: path, "Packing page \(page)/\(total)")
+        if page == 1 || page == total {
+            appendLog(path: path, "Packing page \(page)/\(total)")
+        }
+    }
+
+    private func presentOpenPanel(_ panel: NSOpenPanel, completion: @escaping (NSApplication.ModalResponse) -> Void) {
+        guard !filePanelOpen else { return }
+        filePanelOpen = true
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            Task { @MainActor in
+                self?.filePanelOpen = false
+                completion(response)
+            }
+        }
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible) {
+            panel.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            panel.begin(completionHandler: finish)
+        }
     }
 
     private func outputDirectory(for path: String) -> URL {

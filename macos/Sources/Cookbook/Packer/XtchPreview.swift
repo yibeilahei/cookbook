@@ -36,13 +36,9 @@ enum XtchPreview {
             bitsPerSample: 8, samplesPerPixel: 1, hasAlpha: false, isPlanar: false,
             colorSpaceName: .deviceWhite, bytesPerRow: width, bitsPerPixel: 8
         ), let base = rep.bitmapData else { return nil }
-        // NSBitmapImageRep / SwiftUI treat row 0 as the bottom of the image.
-        // Unpacked gray is top-down (y = 0 is the top of the page).
         gray.withUnsafeBytes { src in
-            guard let p = src.bindMemory(to: UInt8.self).baseAddress else { return }
-            for y in 0..<height {
-                let srcRow = p + (height - 1 - y) * width
-                UnsafeMutableRawPointer(base + y * width).copyMemory(from: srcRow, byteCount: width)
+            if let p = src.baseAddress {
+                UnsafeMutableRawPointer(base).copyMemory(from: p, byteCount: width * height)
             }
         }
         let image = NSImage(size: NSSize(width: width, height: height))
