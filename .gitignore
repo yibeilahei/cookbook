@@ -3,3 +3,4 @@
 macos/.build/
 macos/.swiftpm/
 dist/
+test/
