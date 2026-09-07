@@ -36,7 +36,8 @@ final class AppModel {
     private var ignoreSaves = false
     private var settingsStatusReset: Task<Void, Never>?
     private var convertingPaths: Set<String> = []
-    private var queuedConvertPaths: [String] = []
+    /// Remaining books in the current batch, processed one at a time.
+    private var convertJobs: [String] = []
     var expandedLogs: Set<String> = []
     private var reloadGeneration = 0
     private let packCancel = PackCancel()
@@ -222,40 +223,50 @@ final class AppModel {
             convertStatus = L10n.t("selectDeviceFirst")
             return
         }
+        let newJobs = targets.filter { !convertingPaths.contains($0) && !convertJobs.contains($0) }
+        guard !newJobs.isEmpty else { return }
+
         if converting {
-            queuedConvertPaths.append(contentsOf: targets.filter { !queuedConvertPaths.contains($0) })
+            if packCancel.isCancelled { return }
+            for path in newJobs {
+                convertJobs.append(path)
+                convertingPaths.insert(path)
+                prepareFileForConvert(path)
+            }
             return
         }
+
         converting = true
-        convertingPaths = Set(targets)
+        convertJobs = newJobs
+        convertingPaths = Set(newJobs)
         packCancel.reset()
         convertStatus = ""
-        for i in files.indices where convertingPaths.contains(files[i].path) {
-            files[i].stage = nil
-            files[i].message = nil
-            files[i].percent = nil
-            files[i].outputPath = nil
-            files[i].log = []
-            expandedLogs.insert(files[i].path)
-        }
+        for path in newJobs { prepareFileForConvert(path) }
         if mode == .xtch {
-            await convertXtch(targets)
+            await convertXtch()
         } else {
-            await convertPdf(targets)
+            await convertPdf()
+        }
+        if packCancel.isCancelled {
+            markRemainingCancelled()
         }
         converting = false
         convertingPaths = []
+        convertJobs = []
         convertStatus = ""
-        let queued = queuedConvertPaths
-        queuedConvertPaths = []
-        if !queued.isEmpty {
-            await convert(paths: queued)
-        }
     }
 
     func cancel() async {
         packCancel.cancel()
         calibre.cancel()
+        for path in convertJobs {
+            if let i = files.firstIndex(where: { $0.path == path }),
+               files[i].stage != "done", files[i].stage != "error", files[i].stage != "cancelled" {
+                files[i].stage = "cancelled"
+                appendLog(path: path, "Cancelled")
+            }
+        }
+        convertJobs = []
     }
 
     func openPreview(_ file: InputFile) async {
@@ -287,7 +298,7 @@ final class AppModel {
         }
     }
 
-    private func convertPdf(_ targets: [String]) async {
+    private func convertPdf() async {
         guard let dev = devices.first(where: { $0.key == selectedDevice }) else {
             convertStatus = L10n.t("selectDeviceFirst")
             return
@@ -296,13 +307,8 @@ final class AppModel {
         let size = "\(panel.width)x\(panel.height)"
         let serif = fontSerif, sans = fontSans, mono = fontMono, fontSize = fontSize
         let cancel = packCancel
-        for path in targets {
+        while !cancel.isCancelled, let path = popConvertJob() {
             guard let idx = files.firstIndex(where: { $0.path == path }) else { continue }
-            if cancel.isCancelled {
-                files[idx].stage = "cancelled"
-                appendLog(path: path, "Cancelled")
-                continue
-            }
             if URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf" {
                 files[idx].stage = "done"
                 files[idx].message = "Skipping (already PDF)"
@@ -328,10 +334,9 @@ final class AppModel {
                 if cancel.isCancelled { break }
             }
         }
-        if cancel.isCancelled { markRemainingCancelled() }
     }
 
-    private func convertXtch(_ targets: [String]) async {
+    private func convertXtch() async {
         guard let dev = devices.first(where: { $0.key == selectedDevice }) else {
             convertStatus = L10n.t("selectDeviceFirst")
             return
@@ -343,13 +348,8 @@ final class AppModel {
         let compress = pageCompression
         let cancel = packCancel
 
-        for path in targets {
+        while !cancel.isCancelled, let path = popConvertJob() {
             guard let idx = files.firstIndex(where: { $0.path == path }) else { continue }
-            if cancel.isCancelled {
-                files[idx].stage = "cancelled"
-                appendLog(path: path, "Cancelled")
-                continue
-            }
             do {
                 let dest = xtchDestination(for: path)
                 var pdfURL = URL(fileURLWithPath: path)
@@ -421,7 +421,6 @@ final class AppModel {
                 if cancelled { break }
             }
         }
-        if cancel.isCancelled { markRemainingCancelled() }
     }
 
     private func setPackProgress(path: String, page: Int, total: Int) {
@@ -558,6 +557,24 @@ final class AppModel {
     }
 
     // MARK: - Convert helpers
+
+    private func prepareFileForConvert(_ path: String) {
+        guard let i = files.firstIndex(where: { $0.path == path }) else { return }
+        files[i].stage = nil
+        files[i].message = nil
+        files[i].percent = nil
+        files[i].outputPath = nil
+        files[i].log = []
+        expandedLogs.insert(path)
+    }
+
+    private func popConvertJob() -> String? {
+        while let path = convertJobs.first {
+            convertJobs.removeFirst()
+            if files.contains(where: { $0.path == path }) { return path }
+        }
+        return nil
+    }
 
     private func runCalibre(
         src: URL, dest: URL, size: String,
