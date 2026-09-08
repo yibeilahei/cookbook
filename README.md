@@ -1,6 +1,6 @@
 # cookbook
 
-macOS app that converts ebooks and PDFs for eink readers:
+macOS 14+ app (Apple Silicon and Intel) that converts ebooks and PDFs for eink readers:
 
 - **`.xtch`** — Xteink / CrossPoint devices
 - **Panel-sized PDF** — Kindle, Sony DPT, and similar

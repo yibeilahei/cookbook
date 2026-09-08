@@ -10,7 +10,7 @@ cookbook/
   macos/                    SwiftUI app (SwiftPM)
     Package.swift
     Info.plist
-    scripts/build-app.sh    Cookbook.app + .dmg → dist/
+    scripts/build-app.sh    universal Cookbook.app + .dmg → dist/
     Sources/Cookbook/
       App/                  @main, NSApplicationDelegate
       Views/                window, convert list, settings, sheets
@@ -29,7 +29,7 @@ under UserDefaults keys `dev.cookbook.config.xtch` and
 
 ## Run from source
 
-macOS 14+, Xcode or Command Line Tools. Calibre for ebook → PDF.
+macOS 14+ (Apple Silicon or Intel), Xcode or Command Line Tools. Calibre for ebook → PDF.
 
 ```sh
 brew install --cask calibre          # if needed
@@ -45,10 +45,12 @@ If `ebook-convert` is not on `PATH`, set `EBOOK_CONVERT` to
 macos/scripts/build-app.sh           # dist/Cookbook.app and dist/Cookbook.dmg
 ```
 
-Calibre is not bundled. Builds are ad-hoc signed (no Developer ID).
+The `.app` is a universal binary (`arm64` + `x86_64`). Calibre is not
+bundled. Builds are ad-hoc signed (no Developer ID).
 
 ## Release
 
 Push a `v*.*.*` tag. [release-desktop.yml](../.github/workflows/release-desktop.yml)
-builds the `.dmg` on `macos-latest`. Bump `macos/Info.plist`
-(`CFBundleShortVersionString`) separately if the in-app version should match.
+builds a universal `.dmg` on `macos-latest` (cross-compiles the Intel
+slice). Bump `macos/Info.plist` (`CFBundleShortVersionString`) separately
+if the in-app version should match.

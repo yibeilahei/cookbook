@@ -1,5 +1,7 @@
 #!/bin/bash
 # Installs the latest Cookbook release into ~/Applications and opens it.
+# Releases are a universal (arm64 + x86_64) .dmg; arch-specific names are
+# still preferred when present.
 # curl does not set Gatekeeper's quarantine flag, so this avoids the
 # "Apple could not verify..." block that a browser-downloaded .app/.command
 # hits. Usage (paste in Terminal):

@@ -1,7 +1,8 @@
 name: Release desktop app
 
 # Trigger: git push origin v0.1.0  (tag must match v*.*.*)
-# Result: GitHub Release with Cookbook.dmg. Install via install.sh (unsigned).
+# Result: GitHub Release with a universal (arm64 + x86_64) Cookbook.dmg.
+# Install via install.sh (unsigned).
 
 on:
   push:
@@ -19,6 +20,15 @@ jobs:
 
       - name: Build Cookbook.app and disk image
         run: macos/scripts/build-app.sh
+
+      - name: Confirm universal binary
+        run: |
+          BIN="dist/Cookbook.app/Contents/MacOS/Cookbook"
+          file "$BIN"
+          ARCHS="$(lipo -archs "$BIN")"
+          echo "architectures: $ARCHS"
+          echo "$ARCHS" | grep -qw arm64
+          echo "$ARCHS" | grep -qw x86_64
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

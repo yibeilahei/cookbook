@@ -3,6 +3,9 @@
 #
 #   macos/scripts/build-app.sh
 #
+# Produces a universal (arm64 + x86_64) binary so GitHub Releases run on
+# Intel Macs as well as Apple Silicon. Cross-compiles from the host.
+#
 # The app calls Calibre's ebook-convert directly and packs .xtch in Swift.
 # Calibre is a runtime dependency, not bundled.
 set -euo pipefail
@@ -12,22 +15,39 @@ MACOS="$ROOT/macos"
 DIST="${COOKBOOK_DIST:-$ROOT/dist}"
 APP_NAME="Cookbook"
 APP="$DIST/${APP_NAME}.app"
+ARCHS=(arm64 x86_64)
 
 ohai() { printf "\033[1;34m==>\033[0m %s\n" "$*"; }
 
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 
-ohai "Building SwiftUI frontend…"
+ohai "Building SwiftUI frontend (${ARCHS[*]})…"
 cd "$MACOS"
-swift build -c release --product Cookbook
-BIN_DIR="$(swift build -c release --show-bin-path)"
-BINARY="$BIN_DIR/Cookbook"
-[ -x "$BINARY" ] || { echo "swift build did not produce $BINARY" >&2; exit 1; }
+BINS=()
+BIN_DIR=""
+for arch in "${ARCHS[@]}"; do
+  ohai "swift build ($arch)…"
+  swift build -c release --arch "$arch" --product Cookbook
+  dir="$(swift build -c release --arch "$arch" --show-bin-path)"
+  bin="$dir/Cookbook"
+  [ -x "$bin" ] || { echo "swift build did not produce $bin" >&2; exit 1; }
+  BINS+=("$bin")
+  [ -n "$BIN_DIR" ] || BIN_DIR="$dir"
+done
 
 ohai "Assembling ${APP_NAME}.app…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BINARY" "$APP/Contents/MacOS/${APP_NAME}"
+lipo -create "${BINS[@]}" -output "$APP/Contents/MacOS/${APP_NAME}"
+chmod +x "$APP/Contents/MacOS/${APP_NAME}"
+SLICES="$(lipo -archs "$APP/Contents/MacOS/${APP_NAME}")"
+ohai "Binary architectures: $SLICES"
+for arch in "${ARCHS[@]}"; do
+  echo "$SLICES" | grep -qw "$arch" || {
+    echo "missing $arch slice in $APP/Contents/MacOS/${APP_NAME}" >&2
+    exit 1
+  }
+done
 cp "$MACOS/Info.plist" "$APP/Contents/Info.plist"
 
 # UI strings: copy the file into Contents/Resources so Bundle.main can load it.
