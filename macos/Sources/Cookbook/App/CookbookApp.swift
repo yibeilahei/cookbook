@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// SwiftUI entry point. Conversion runs in-process (Calibre CLI + Swift packer).
+/// SwiftUI entry point. Conversion runs in-process (WebKit or Calibre + Swift packer).
 
 @main
 struct CookbookApp: App {

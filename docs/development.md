@@ -16,6 +16,7 @@ cookbook/
       Views/                window, convert list, settings, sheets
       Model/                app state and file-list types
       Calibre/              ebook-convert / ebook-meta
+      WebKitConvert/        EPUB/HTML/TXT → PDF without Calibre
       Packer/               PDF → XTCH and preview unpack
       Config/               built-in device defaults + UserDefaults
       Support/              l10n, fonts
@@ -29,7 +30,8 @@ under UserDefaults keys `dev.cookbook.config.xtch` and
 
 ## Run from source
 
-macOS 14+ (Apple Silicon or Intel), Xcode or Command Line Tools. Calibre for ebook → PDF.
+macOS 14+ (Apple Silicon or Intel), Xcode or Command Line Tools. Calibre only
+for Kindle/MOBI and other non-WebKit formats.
 
 ```sh
 brew install --cask calibre          # if needed

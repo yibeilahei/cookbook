@@ -13,6 +13,21 @@ struct SettingsPane: View {
                     .font(.headline)
             }
             Section {
+                Picker(L10n.t("engine"), selection: Binding(
+                    get: { model.convertEngine },
+                    set: { newValue in
+                        Task { await model.engineChanged(newValue) }
+                    }
+                )) {
+                    Text(L10n.t("engineWebKit")).tag(ConvertEngine.webkit)
+                    Text(L10n.t("engineCalibre")).tag(ConvertEngine.calibre)
+                }
+                Text(L10n.t("engineHint"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Picker(L10n.t("language"), selection: Binding(
                     get: { model.language },
                     set: { model.languageChanged($0) }

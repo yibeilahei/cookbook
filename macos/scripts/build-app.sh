@@ -6,8 +6,8 @@
 # Produces a universal (arm64 + x86_64) binary so GitHub Releases run on
 # Intel Macs as well as Apple Silicon. Cross-compiles from the host.
 #
-# The app calls Calibre's ebook-convert directly and packs .xtch in Swift.
-# Calibre is a runtime dependency, not bundled.
+# EPUB/HTML/TXT → PDF uses WebKit. Other ebook formats call Calibre's
+# ebook-convert. PDF → .xtch is packed in Swift. Calibre is optional.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

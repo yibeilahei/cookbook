@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// Window state: files, settings, and conversion (Calibre + Swift packer).
+/// Window state: files, settings, and conversion (WebKit or Calibre + Swift packer).
 @Observable
 @MainActor
 final class AppModel {
@@ -25,6 +25,7 @@ final class AppModel {
     var fontSans = "Hiragino Sans"
     var fontMono = "Menlo"
     var fontSize = 60
+    var convertEngine: ConvertEngine = .webkit
     var systemFonts: [SystemFont] = []
 
     let calibre = Calibre()
@@ -44,6 +45,7 @@ final class AppModel {
     private var filePanelOpen = false
     private var previewDocument: XtchPreview.Document?
     private var previewLoadGeneration = 0
+    private static let engineKey = "dev.cookbook.convertEngine"
 
     var isXtch: Bool { mode == .xtch }
 
@@ -53,11 +55,16 @@ final class AppModel {
         guard !started else { return }
         started = true
         systemFonts = FontLister.list()
+        if let raw = UserDefaults.standard.string(forKey: Self.engineKey),
+           let engine = ConvertEngine(rawValue: raw) {
+            convertEngine = engine
+        }
         Task { await reload(kind: mode); await checkCalibre() }
     }
 
     func stop() {
         calibre.cancel()
+        WebKitPDF.shared.cancel()
         packCancel.cancel()
     }
 
@@ -86,11 +93,21 @@ final class AppModel {
     }
 
     func checkCalibre() async {
+        if convertEngine == .webkit {
+            calibreHint = nil
+            return
+        }
         if calibre.findConvert() != nil {
             calibreHint = nil
         } else {
             calibreHint = CalibreError.notFound.errorDescription
         }
+    }
+
+    func engineChanged(_ engine: ConvertEngine) async {
+        convertEngine = engine
+        UserDefaults.standard.set(engine.rawValue, forKey: Self.engineKey)
+        await checkCalibre()
     }
 
     func pickInputs() {
@@ -187,7 +204,7 @@ final class AppModel {
         var language = files.first(where: { $0.path == path })?.detectedLanguage
         if language == nil {
             let detected = await Task.detached { [calibre] in
-                calibre.detectLanguage(path: path)
+                EpubBook.language(at: path) ?? calibre.detectLanguage(path: path)
             }.value
             language = detected
             if let idx = files.firstIndex(where: { $0.path == path }) {
@@ -261,6 +278,7 @@ final class AppModel {
     func cancel() async {
         packCancel.cancel()
         calibre.cancel()
+        WebKitPDF.shared.cancel()
         for path in convertJobs {
             if let i = files.firstIndex(where: { $0.path == path }),
                files[i].stage != "done", files[i].stage != "error", files[i].stage != "cancelled" {
@@ -383,7 +401,6 @@ final class AppModel {
             return
         }
         let panel = dev.panelSize
-        let size = "\(panel.width)x\(panel.height)"
         let serif = fontSerif, sans = fontSans, mono = fontMono, fontSize = fontSize
         let cancel = packCancel
         while !cancel.isCancelled, let path = popConvertJob() {
@@ -398,10 +415,11 @@ final class AppModel {
                 "\(URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent)_\(selectedDevice).pdf")
             files[idx].stage = "convert"
             files[idx].percent = 0
-            appendLog(path: path, "ebook-convert → \(dest.path)")
             do {
-                try await runCalibre(src: URL(fileURLWithPath: path), dest: dest, size: size,
-                                     serif: serif, sans: sans, mono: mono, fontSize: fontSize, path: path)
+                try await convertEbookToPDF(
+                    src: URL(fileURLWithPath: path), dest: dest,
+                    width: panel.width, height: panel.height,
+                    serif: serif, sans: sans, mono: mono, fontSize: fontSize, path: path)
                 if let i = files.firstIndex(where: { $0.path == path }) {
                     files[i].stage = "done"
                     files[i].percent = 100
@@ -438,11 +456,11 @@ final class AppModel {
                     let pdfDest = outputDirectory(for: path)
                         .appendingPathComponent(
                             "\(URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent)_\(selectedDevice).pdf")
-                    let size = "\(width)x\(height)"
-                    appendLog(path: path, "ebook-convert → \(pdfDest.path)")
-                    try await runCalibre(src: URL(fileURLWithPath: path), dest: pdfDest, size: size,
-                                         serif: fontSerif, sans: fontSans, mono: fontMono,
-                                         fontSize: fontSize, path: path)
+                    try await convertEbookToPDF(
+                        src: URL(fileURLWithPath: path), dest: pdfDest,
+                        width: width, height: height,
+                        serif: fontSerif, sans: fontSans, mono: fontMono,
+                        fontSize: fontSize, path: path)
                     if cancel.isCancelled { throw XtchError.message("cancelled") }
                     pdfURL = pdfDest
                 }
@@ -621,7 +639,7 @@ final class AppModel {
         var counts: [String: Int] = [:]
         for path in sample {
             let lang = await Task.detached { [calibre] in
-                calibre.detectLanguage(path: path)
+                EpubBook.language(at: path) ?? calibre.detectLanguage(path: path)
             }.value
             if let idx = files.firstIndex(where: { $0.path == path }) {
                 files[idx].detectedLanguage = lang
@@ -653,6 +671,38 @@ final class AppModel {
             if files.contains(where: { $0.path == path }) { return path }
         }
         return nil
+    }
+
+    private func convertEbookToPDF(
+        src: URL, dest: URL, width: Int, height: Int,
+        serif: String, sans: String, mono: String, fontSize: Int, path: String
+    ) async throws {
+        let ext = src.pathExtension.lowercased()
+        if convertEngine == .webkit {
+            if WebKitPDF.canConvert(extension: ext) {
+                appendLog(path: path, "WebKit → \(dest.path)")
+                let cancel = packCancel
+                try await WebKitPDF.shared.ebookToPDF(
+                    src: src, dest: dest,
+                    pageWidth: width, pageHeight: height,
+                    serif: serif, sans: sans, mono: mono, fontSize: fontSize,
+                    onProgress: { percent, message in
+                        self.setCalibreProgress(path: path, percent: percent, message: message)
+                    },
+                    onLog: { line in
+                        self.appendLog(path: path, line)
+                    },
+                    shouldCancel: { cancel.isCancelled }
+                )
+                return
+            }
+            throw WebKitConvertError.formatNeedsCalibre(ext)
+        }
+        let size = "\(width)x\(height)"
+        appendLog(path: path, "ebook-convert → \(dest.path)")
+        try await runCalibre(
+            src: src, dest: dest, size: size,
+            serif: serif, sans: sans, mono: mono, fontSize: fontSize, path: path)
     }
 
     private func runCalibre(
@@ -731,12 +781,19 @@ final class AppModel {
             appendLog(path: path, "ebook-convert failed")
             return
         }
+        if let error = error as? WebKitConvertError, case .failed = error {
+            appendLog(path: path, "WebKit convert failed")
+            return
+        }
         appendLog(path: path, error.localizedDescription)
     }
 
     private func shortError(_ error: Error) -> String {
         if let error = error as? CalibreError, case .failed = error {
             return "ebook-convert failed"
+        }
+        if let error = error as? WebKitConvertError, case .failed = error {
+            return "WebKit convert failed"
         }
         let text = error.localizedDescription
         if text.count > 200 { return String(text.prefix(200)) + "…" }
@@ -745,6 +802,7 @@ final class AppModel {
 
     private func isCancelError(_ error: Error) -> Bool {
         if let error = error as? CalibreError, case .cancelled = error { return true }
+        if let error = error as? WebKitConvertError, case .cancelled = error { return true }
         return error.localizedDescription.lowercased().contains("cancelled")
     }
 

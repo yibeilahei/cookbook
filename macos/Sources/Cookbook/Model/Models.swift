@@ -9,6 +9,13 @@ enum ConvertMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// How ebook → PDF is typeset. PDF inputs skip this and go straight to packing.
+enum ConvertEngine: String, CaseIterable, Identifiable {
+    case webkit
+    case calibre
+    var id: String { rawValue }
+}
+
 struct DeviceInfo: Identifiable, Hashable, Codable {
     var key: String
     var label: String

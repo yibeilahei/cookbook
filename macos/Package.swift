@@ -11,14 +11,28 @@ let package = Package(
         .executable(name: "Cookbook", targets: ["Cookbook"])
     ],
     targets: [
+        .target(
+            name: "CookbookWebKit",
+            path: "Sources/CookbookWebKit",
+            publicHeadersPath: "include",
+            linkerSettings: [
+                .linkedFramework("WebKit"),
+                .linkedFramework("AppKit"),
+            ]
+        ),
         .executableTarget(
             name: "Cookbook",
+            dependencies: ["CookbookWebKit"],
             path: "Sources/Cookbook",
             resources: [
                 .copy("Resources/strings.json")
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v5)
+            ],
+            linkerSettings: [
+                .linkedFramework("WebKit"),
+                .linkedFramework("PDFKit"),
             ]
         )
     ]
