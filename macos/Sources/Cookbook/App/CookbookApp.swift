@@ -44,6 +44,10 @@ struct CookbookApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if ConvertBench.launchIfRequested() { return }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         model?.stop()
     }

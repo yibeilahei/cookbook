@@ -13,6 +13,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)cookbookSetWhiteBackground;
 /// Calls WebKit's next-paint hook if present; otherwise runs the block immediately.
 - (void)cookbookDoAfterNextPaint:(void (^)(void))block NS_SWIFT_NAME(cookbookOnNextPaint(_:));
+/// Vector PDF of `rect` in document coordinates (not the scrolled view).
+- (void)cookbookCapturePDFRect:(CGRect)rect
+                    completion:(void (^)(NSData *_Nullable data, NSError *_Nullable error))completion
+    NS_SWIFT_NAME(cookbookCapturePDF(rect:_:));
 
 @end
 

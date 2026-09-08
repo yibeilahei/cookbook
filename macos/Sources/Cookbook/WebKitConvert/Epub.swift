@@ -25,7 +25,7 @@ enum EpubBook {
         return language(fromOPF: opf)
     }
 
-    static func unpack(_ epub: URL) throws -> (root: URL, items: [Item]) {
+    static func unpack(_ epub: URL) throws -> (root: URL, items: [Item], title: String, author: String) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cookbook-epub-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -69,7 +69,15 @@ enum EpubBook {
             items.append(Item(href: url, mediaType: spec.type.lowercased()))
         }
         if items.isEmpty { throw WebKitConvertError.noSpine }
-        return (root, items)
+        let title = firstText(opf, localName: "title")
+        let author = firstText(opf, localName: "creator")
+        return (root, items, title, author)
+    }
+
+    private static func firstText(_ doc: XMLDocument, localName: String) -> String {
+        let nodes = (try? doc.nodes(forXPath: "//*[local-name()='\(localName)']")) ?? []
+        return nodes.compactMap { $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
     }
 
     static func language(fromOPF xml: String) -> String? {

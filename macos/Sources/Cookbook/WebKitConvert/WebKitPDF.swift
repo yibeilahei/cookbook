@@ -1,7 +1,6 @@
 import AppKit
 import CookbookWebKit
 import Foundation
-import PDFKit
 import WebKit
 
 /// Typeset EPUB/HTML/TXT to a panel-sized PDF with WebKit (no Calibre).
@@ -14,13 +13,25 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
     private var navWait: CheckedContinuation<Void, Error>?
     private var window: NSWindow?
     private var webView: WKWebView?
+    /// WKWebView / pagination size in CSS px (96 px/in), e.g. 704×1056.
     private var paper = NSSize.zero
+    /// Output PDF / XTCH panel in points (72 pt/in), e.g. 528×792.
+    private var panel = NSSize.zero
+    private var cssFont: CGFloat = 16
     private var css = ""
     private var pager: Pager = .css
+    private var pdfCtx: CGContext?
+    private var pdfBox = CGRect.zero
+    private var pdfPageCount = 0
+    private var pageBudget = 0
+    private var fontProbe = ""
     /// `_doAfterNextPresentationUpdate:` may not fire for an offscreen window.
     private var paintHookWorks = true
-    /// Chromium/Calibre print uses 96 CSS px per inch on a point-sized page.
-    private static let cssPxPerPt: CGFloat = 96 / 72
+    /// Calibre `--pdf-default-font-size` is CSS px at 96 px/in. Screen WKWebView
+    /// `px` match points (72 px/in); PDF capture uses print (96 px/in). Layout
+    /// at 96dpi (704 CSS px, 60px type) and scale the PDF down to the panel.
+    private static let cssPxPerIn: CGFloat = 96
+    private static let ptPerIn: CGFloat = 72
 
     private enum Pager {
         /// Engine-owned pages: scroll by `delta` from `originX`.
@@ -51,66 +62,37 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
         src: URL, dest: URL,
         pageWidth: Int, pageHeight: Int,
         serif: String, sans: String, mono: String, fontSize: Int,
+        maxPages: Int = 0,
         onProgress: @escaping (Int, String) -> Void,
         onLog: @escaping (String) -> Void,
         shouldCancel: @escaping () -> Bool
     ) async throws {
         cancelled = false
         paintHookWorks = true
+        pageBudget = 0
         try FileManager.default.createDirectory(
             at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
         let ext = src.pathExtension.lowercased()
         if shouldCancel() || cancelled { throw WebKitConvertError.cancelled }
 
-        let jobs: [PrintJob]
-        var cleanup: URL?
-        switch ext {
-        case "epub":
-            let unpacked = try EpubBook.unpack(src)
-            cleanup = unpacked.root
-            jobs = unpacked.items.map { PrintJob(url: $0.href, mediaType: $0.mediaType, accessRoot: unpacked.root) }
-        case "html", "htm", "xhtml":
-            jobs = [PrintJob(url: src, mediaType: "text/html", accessRoot: src.deletingLastPathComponent())]
-        case "txt":
-            let html = try Self.wrapText(src)
-            jobs = [PrintJob(url: html, mediaType: "text/html", accessRoot: html.deletingLastPathComponent())]
-            cleanup = html.deletingLastPathComponent()
-        default:
-            throw WebKitConvertError.formatNeedsCalibre(ext)
-        }
+        let prepared = try prepareJobs(src: src, ext: ext)
         defer {
-            if let cleanup { try? FileManager.default.removeItem(at: cleanup) }
+            if let cleanup = prepared.cleanup { try? FileManager.default.removeItem(at: cleanup) }
+            closePDF()
             tearDownView()
         }
-
-        // Calibre: --custom-size in points, --pdf-default-font-size in CSS px
-        // at 96 px/in. Match that so 60px type on a 528pt panel is the same.
-        let cssPx = Self.cssPxPerPt
-        paper = NSSize(
-            width: CGFloat(pageWidth) * cssPx,
-            height: CGFloat(pageHeight) * cssPx)
-        css = Self.printCSS(
-            width: Int(paper.width.rounded()), height: Int(paper.height.rounded()),
-            serif: serif, sans: sans, mono: mono, fontSize: fontSize)
-        prepareView(paper: paper, css: css)
-
-        var pdfs: [URL] = []
-        for (i, job) in jobs.enumerated() {
-            if shouldCancel() || cancelled { throw WebKitConvertError.cancelled }
-            let label = job.url.lastPathComponent
-            onLog("WebKit \(i + 1)/\(jobs.count) \(label)")
-            onProgress(
-                Int(Double(i) / Double(max(jobs.count, 1)) * 100),
-                "WebKit \(i + 1)/\(jobs.count)")
-            await Task.yield()
-            let part = dest.deletingLastPathComponent()
-                .appendingPathComponent("cookbook-wk-\(UUID().uuidString).pdf")
-            try await printJob(job, to: part, paper: paper, onLog: onLog)
-            pdfs.append(part)
+        configureLayout(pageWidth: pageWidth, pageHeight: pageHeight, fontSize: fontSize,
+                        serif: serif, sans: sans, mono: mono, onLog: onLog)
+        onLog("WebKit PDF vector (document page rects)")
+        try openPDF(dest)
+        try await renderJobs(
+            prepared.jobs, maxPages: maxPages,
+            onProgress: onProgress, onLog: onLog, shouldCancel: shouldCancel
+        ) { i, n, _, _, _ in
+            try await self.appendVisiblePDFPage(index: i, of: n)
         }
-        onProgress(95, "Merging PDF")
-        try Self.mergePDFs(pdfs, dest: dest)
-        for part in pdfs { try? FileManager.default.removeItem(at: part) }
+        if pdfPageCount == 0 { throw WebKitConvertError.failed("WebKit produced an empty PDF") }
+        closePDF()
         onProgress(100, "PDF ready")
     }
 
@@ -118,6 +100,57 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
         var url: URL
         var mediaType: String
         var accessRoot: URL
+    }
+
+    private struct PreparedJobs {
+        var jobs: [PrintJob]
+        var cleanup: URL?
+        var title: String
+        var author: String
+    }
+
+    private func prepareJobs(src: URL, ext: String) throws -> PreparedJobs {
+        switch ext {
+        case "epub":
+            let unpacked = try EpubBook.unpack(src)
+            let jobs = unpacked.items.map {
+                PrintJob(url: $0.href, mediaType: $0.mediaType, accessRoot: unpacked.root)
+            }
+            return PreparedJobs(
+                jobs: jobs, cleanup: unpacked.root,
+                title: unpacked.title, author: unpacked.author)
+        case "html", "htm", "xhtml":
+            return PreparedJobs(
+                jobs: [PrintJob(url: src, mediaType: "text/html",
+                                accessRoot: src.deletingLastPathComponent())],
+                cleanup: nil,
+                title: src.deletingPathExtension().lastPathComponent, author: "")
+        case "txt":
+            let html = try Self.wrapText(src)
+            return PreparedJobs(
+                jobs: [PrintJob(url: html, mediaType: "text/html",
+                                accessRoot: html.deletingLastPathComponent())],
+                cleanup: html.deletingLastPathComponent(),
+                title: src.deletingPathExtension().lastPathComponent, author: "")
+        default:
+            throw WebKitConvertError.formatNeedsCalibre(ext)
+        }
+    }
+
+    private func configureLayout(
+        pageWidth: Int, pageHeight: Int, fontSize: Int,
+        serif: String, sans: String, mono: String,
+        onLog: @escaping (String) -> Void
+    ) {
+        panel = NSSize(width: CGFloat(pageWidth), height: CGFloat(pageHeight))
+        let cssScale = Self.cssPxPerIn / Self.ptPerIn
+        paper = NSSize(width: panel.width * cssScale, height: panel.height * cssScale)
+        cssFont = CGFloat(max(fontSize, 1))
+        css = Self.printCSS(
+            width: Int(panel.width.rounded()), height: Int(panel.height.rounded()),
+            serif: serif, sans: sans, mono: mono, fontSize: cssFont)
+        onLog("WebKit layout \(Int(paper.width.rounded()))×\(Int(paper.height.rounded())) CSS px, panel \(pageWidth)×\(pageHeight) pt, font \(Self.cssNumber(cssFont))px @96dpi")
+        prepareView(paper: paper, css: css)
     }
 
     private func prepareView(paper: NSSize, css: String) {
@@ -157,45 +190,57 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
         navWait = nil
     }
 
-    private func printJob(
-        _ job: PrintJob, to dest: URL, paper: NSSize,
-        onLog: @escaping (String) -> Void
+    private func renderJobs(
+        _ jobs: [PrintJob],
+        maxPages: Int = 0,
+        onProgress: @escaping (Int, String) -> Void,
+        onLog: @escaping (String) -> Void,
+        shouldCancel: @escaping () -> Bool,
+        onPage: (Int, Int, Int, Int, String) async throws -> Void
     ) async throws {
         guard webView != nil else {
             throw WebKitConvertError.failed("WebKit view is not ready")
         }
-        webView?.frame = NSRect(origin: .zero, size: paper)
-        window?.setContentSize(paper)
-        if EpubBook.imageTypes.contains(job.mediaType) {
-            let html = Self.wrapImage(job.url)
-            try await load(html, accessRoot: job.accessRoot)
-        } else {
-            try await load(job.url, accessRoot: job.accessRoot)
-        }
-        pager = .css
-        let metrics = try await prepareLayout(paper: paper)
-        if cancelled { throw WebKitConvertError.cancelled }
-        let n = min(2000, max(1, metrics.pages))
-        let axis = metrics.vertical ? (metrics.rtl ? "vertical-rl" : "vertical-lr") : "horizontal"
-        let how: String
-        switch pager {
-        case .engine: how = "Books"
-        case .css: how = "css"
-        }
-        onLog("  \(how) \(axis) \(Int(metrics.width))×\(Int(metrics.height)) → \(n) page\(n == 1 ? "" : "s")")
-        var images: [NSImage] = []
-        images.reserveCapacity(n)
-        for i in 0..<n {
-            if cancelled { throw WebKitConvertError.cancelled }
-            try await showPage(i)
-            let image = try await captureImage()
-            images.append(image)
-            if i == 0 || i + 1 == n || i % 16 == 15 {
-                onLog("  page \(i + 1)/\(n)")
+        for (jobIndex, job) in jobs.enumerated() {
+            if shouldCancel() || cancelled { throw WebKitConvertError.cancelled }
+            let label = job.url.lastPathComponent
+            onLog("WebKit \(jobIndex + 1)/\(jobs.count) \(label)")
+            onProgress(
+                Int(Double(jobIndex) / Double(max(jobs.count, 1)) * 100),
+                "WebKit \(jobIndex + 1)/\(jobs.count)")
+            await Task.yield()
+            webView?.frame = NSRect(origin: .zero, size: paper)
+            window?.setContentSize(paper)
+            if EpubBook.imageTypes.contains(job.mediaType) {
+                let html = Self.wrapImage(job.url)
+                try await load(html, accessRoot: job.accessRoot)
+            } else {
+                try await load(job.url, accessRoot: job.accessRoot)
             }
-            if i % 8 == 7 { await Task.yield() }
+            pager = .css
+            let metrics = try await prepareLayout(paper: paper)
+            if cancelled { throw WebKitConvertError.cancelled }
+            let n = min(2000, max(1, metrics.pages))
+            let axis = metrics.vertical ? (metrics.rtl ? "vertical-rl" : "vertical-lr") : "horizontal"
+            let how: String
+            switch pager {
+            case .engine: how = "Books"
+            case .css: how = "css"
+            }
+            onLog("  \(how) \(axis) \(Int(metrics.width))×\(Int(metrics.height)) → \(n) page\(n == 1 ? "" : "s")")
+            if !fontProbe.isEmpty { onLog("  \(fontProbe)") }
+            for i in 0..<n {
+                if cancelled { throw WebKitConvertError.cancelled }
+                if maxPages > 0, pageBudget >= maxPages { return }
+                try await showPage(i, waitForPaint: true)
+                try await onPage(i, n, jobIndex, jobs.count, label)
+                pageBudget += 1
+                if i == 0 || i + 1 == n || i % 16 == 15 {
+                    onLog("  page \(i + 1)/\(n)")
+                }
+                if i % 8 == 7 { await Task.yield() }
+            }
         }
-        try Self.writeImages(images, dest: dest, paper: paper)
     }
 
     private struct Metrics {
@@ -211,6 +256,7 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
             return Metrics(vertical: false, rtl: false, width: 1, height: 1, pages: 1)
         }
         let writing = try await detectWritingMode(webView)
+        await pinFontSize(webView)
         await waitForFonts(webView)
         if webView.cookbookHasPagination() {
             if let metrics = try await enableEnginePagination(webView, paper: paper, rtl: writing.rtl) {
@@ -271,6 +317,38 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
             rtl: (dict?["rtl"] as? Bool) ?? false)
     }
 
+    private func pinFontSize(_ webView: WKWebView) async {
+        let px = Self.cssNumber(cssFont)
+        let js = """
+        (function() {
+          const px = '\(px)px';
+          const root = document.documentElement;
+          const body = document.body;
+          if (root) {
+            root.style.setProperty('font-size', px, 'important');
+          }
+          if (body) {
+            body.style.setProperty('font-size', px, 'important');
+          }
+          const cs = body ? getComputedStyle(body) : null;
+          return {
+            html: root ? getComputedStyle(root).fontSize : '',
+            body: cs ? cs.fontSize : '',
+            innerWidth: window.innerWidth || 0
+          };
+        })()
+        """
+        let raw = try? await webView.evaluateJavaScript(js)
+        if let dict = raw as? [String: Any] {
+            let html = dict["html"] as? String ?? "?"
+            let body = dict["body"] as? String ?? "?"
+            let w = (dict["innerWidth"] as? NSNumber)?.intValue ?? 0
+            fontProbe = "computed font html \(html) body \(body), innerWidth \(w)"
+        } else {
+            fontProbe = ""
+        }
+    }
+
     private struct EnginePages {
         var pages: Int
         var originX: CGFloat
@@ -285,27 +363,22 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
         await afterPaint(webView)
         _ = try? await webView.evaluateJavaScript(
             "document.documentElement && document.documentElement.offsetWidth")
-        await afterPaint(webView)
-
-        var engineCount = 0
-        for _ in 0..<6 {
-            engineCount = pageCount(webView)
-            if engineCount > 0 { break }
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            await afterPaint(webView)
-        }
-
-        let scroll = try await scrollMetrics(webView)
-        let fromScroll = max(1, Int(ceil((scroll.width / max(scroll.clientWidth, 1)) - 1e-6)))
+        var engineCount = pageCount(webView)
+        var scroll = try await scrollMetrics(webView)
+        var fromScroll = max(1, Int(ceil((scroll.width / max(scroll.clientWidth, 1)) - 1e-6)))
         if engineCount == 0 && fromScroll <= 1 {
-            // Pagination never kicked in (still a single viewport).
+            await afterPaint(webView)
+            engineCount = pageCount(webView)
+            scroll = try await scrollMetrics(webView)
+            fromScroll = max(1, Int(ceil((scroll.width / max(scroll.clientWidth, 1)) - 1e-6)))
+        }
+        if engineCount == 0 && fromScroll <= 1 {
             return nil
         }
         let pages = min(2000, max(engineCount, fromScroll, 1))
         let origin = scroll.left
         let delta = rtl ? -paper.width : paper.width
         _ = try? await scrollToX(webView, origin)
-        await afterPaint(webView)
         return EnginePages(pages: pages, originX: origin, delta: delta)
     }
 
@@ -399,36 +472,7 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
             pages: max(1, pages))
     }
 
-    private func captureImage() async throws -> NSImage {
-        guard let webView else { throw WebKitConvertError.failed("WebKit view is not ready") }
-        let snapshot = WKSnapshotConfiguration()
-        snapshot.rect = webView.bounds
-        snapshot.snapshotWidth = NSNumber(value: Double(paper.width))
-        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<NSImage, Error>) in
-            let lock = NSLock()
-            var resumed = false
-            func resumeOnce(_ result: Result<NSImage, Error>) {
-                lock.lock()
-                defer { lock.unlock() }
-                guard !resumed else { return }
-                resumed = true
-                cont.resume(with: result)
-            }
-            webView.takeSnapshot(with: snapshot) { image, error in
-                if let image {
-                    resumeOnce(.success(image))
-                } else {
-                    resumeOnce(.failure(error ?? WebKitConvertError.failed("Snapshot failed")))
-                }
-            }
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
-                resumeOnce(.failure(WebKitConvertError.failed("Timed out capturing page")))
-            }
-        }
-    }
-
-    private func showPage(_ i: Int) async throws {
+    private func showPage(_ i: Int, waitForPaint: Bool) async throws {
         guard let webView else { return }
         switch pager {
         case .engine(_, let originX, let delta):
@@ -436,7 +480,90 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
         case .css:
             _ = try? await webView.evaluateJavaScript("window.__cookbookShow(\(i))")
         }
-        await afterPaint(webView)
+        if waitForPaint { await afterPaint(webView) }
+    }
+
+    private func openPDF(_ dest: URL) throws {
+        closePDF()
+        try? FileManager.default.removeItem(at: dest)
+        pdfBox = CGRect(origin: .zero, size: panel)
+        guard let ctx = CGContext(dest as CFURL, mediaBox: &pdfBox, nil) else {
+            throw WebKitConvertError.failed("Could not create PDF")
+        }
+        pdfCtx = ctx
+        pdfPageCount = 0
+    }
+
+    private func pdfDocumentRect(index i: Int, of _: Int) -> CGRect {
+        let w = paper.width
+        let h = paper.height
+        switch pager {
+        case .engine(let rtl, _, _):
+            // drawToPDF uses document coordinates, not the scrolled view.
+            // LTR: columns run +x. RTL / vertical-rl: later pages are at -x
+            // (page 0 at the origin). (n-1-i)*w looks past the right edge → blank.
+            let x = CGFloat(i) * (rtl ? -w : w)
+            return CGRect(x: x, y: 0, width: w, height: h)
+        case .css:
+            return CGRect(origin: .zero, size: CGSize(width: w, height: h))
+        }
+    }
+
+    private func capturePDFPage(rect: CGRect) async throws -> Data {
+        guard let webView else { throw WebKitConvertError.failed("WebKit view is not ready") }
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
+            let lock = NSLock()
+            var resumed = false
+            func resumeOnce(_ result: Result<Data, Error>) {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !resumed else { return }
+                resumed = true
+                cont.resume(with: result)
+            }
+            webView.cookbookCapturePDF(rect: rect) { data, error in
+                if let data, error == nil {
+                    resumeOnce(.success(data))
+                } else {
+                    resumeOnce(.failure(error ?? WebKitConvertError.failed("PDF snapshot failed")))
+                }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                resumeOnce(.failure(WebKitConvertError.failed("Timed out creating PDF page")))
+            }
+        }
+    }
+
+    private func appendVisiblePDFPage(index i: Int, of n: Int) async throws {
+        let data = try await capturePDFPage(rect: pdfDocumentRect(index: i, of: n))
+        try appendPDFPage(from: data)
+    }
+
+    private func appendPDFPage(from data: Data) throws {
+        guard let ctx = pdfCtx else {
+            throw WebKitConvertError.failed("PDF is not open")
+        }
+        guard let provider = CGDataProvider(data: data as CFData),
+              let src = CGPDFDocument(provider),
+              let page = src.page(at: 1)
+        else {
+            throw WebKitConvertError.failed("WebKit PDF page was empty")
+        }
+        ctx.beginPDFPage(nil)
+        ctx.setFillColor(gray: 1, alpha: 1)
+        ctx.fill(pdfBox)
+        ctx.saveGState()
+        ctx.concatenate(page.getDrawingTransform(.mediaBox, rect: pdfBox, rotate: 0, preserveAspectRatio: false))
+        ctx.drawPDFPage(page)
+        ctx.restoreGState()
+        ctx.endPDFPage()
+        pdfPageCount += 1
+    }
+
+    private func closePDF() {
+        pdfCtx?.closePDF()
+        pdfCtx = nil
     }
 
     private func setPagination(
@@ -531,26 +658,6 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
         return try await webView.evaluateJavaScript(js)
     }
 
-    nonisolated private static func writeImages(_ images: [NSImage], dest: URL, paper: NSSize) throws {
-        try? FileManager.default.removeItem(at: dest)
-        var box = CGRect(origin: .zero, size: paper)
-        guard let ctx = CGContext(dest as CFURL, mediaBox: &box, nil) else {
-            throw WebKitConvertError.failed("Could not create PDF")
-        }
-        for image in images {
-            ctx.beginPDFPage(nil)
-            ctx.setFillColor(gray: 1, alpha: 1)
-            ctx.fill(box)
-            var imageRect = CGRect(origin: .zero, size: image.size)
-            if let cg = image.cgImage(forProposedRect: &imageRect, context: nil, hints: nil) {
-                ctx.draw(cg, in: box)
-            }
-            ctx.endPDFPage()
-        }
-        ctx.closePDF()
-        if images.isEmpty { throw WebKitConvertError.failed("WebKit produced an empty PDF") }
-    }
-
     private func load(_ url: URL, accessRoot: URL) async throws {
         guard let webView else { throw WebKitConvertError.failed("WebKit view is not ready") }
         do {
@@ -614,34 +721,13 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
         }
     }
 
-    private static func mergePDFs(_ parts: [URL], dest: URL) throws {
-        if parts.count == 1 {
-            if FileManager.default.fileExists(atPath: dest.path) {
-                try FileManager.default.removeItem(at: dest)
-            }
-            try FileManager.default.moveItem(at: parts[0], to: dest)
-            return
-        }
-        let out = PDFDocument()
-        for url in parts {
-            guard let doc = PDFDocument(url: url) else {
-                throw WebKitConvertError.failed("Could not read \(url.lastPathComponent)")
-            }
-            for i in 0..<doc.pageCount {
-                if let page = doc.page(at: i) {
-                    out.insert(page, at: out.pageCount)
-                }
-            }
-        }
-        if out.pageCount == 0 { throw WebKitConvertError.failed("WebKit produced an empty PDF") }
-        if !out.write(to: dest) {
-            throw WebKitConvertError.failed("Could not write \(dest.path)")
-        }
+    private static func cssNumber(_ n: CGFloat) -> String {
+        String(format: "%g", Double(n))
     }
 
     private static func printCSS(
         width: Int, height: Int,
-        serif: String, sans: String, mono: String, fontSize: Int
+        serif: String, sans: String, mono: String, fontSize: CGFloat
     ) -> String {
         let s = cssQuote(serif)
         let a = cssQuote(sans)
@@ -649,7 +735,7 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
         return """
         @page { size: \(width)pt \(height)pt; margin: 0; }
         html {
-          font-size: \(fontSize)px;
+          font-size: \(cssNumber(fontSize))px !important;
         }
         html.vrtl, .vrtl {
           -webkit-writing-mode: vertical-rl !important;
@@ -669,7 +755,7 @@ final class WebKitPDF: NSObject, WKNavigationDelegate {
         }
         body {
           font-family: \(s), \(a), serif !important;
-          font-size: 1rem;
+          font-size: \(cssNumber(fontSize))px !important;
         }
         code, kbd, pre, samp, tt { font-family: \(m), monospace !important; }
         img, svg, video, canvas {

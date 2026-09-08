@@ -449,15 +449,17 @@ final class AppModel {
             guard let idx = files.firstIndex(where: { $0.path == path }) else { continue }
             do {
                 let dest = xtchDestination(for: path)
-                var pdfURL = URL(fileURLWithPath: path)
-                if pdfURL.pathExtension.lowercased() != "pdf" {
+                let srcURL = URL(fileURLWithPath: path)
+                let ext = srcURL.pathExtension.lowercased()
+                var pdfURL = srcURL
+                if ext != "pdf" {
                     files[idx].stage = "convert"
                     files[idx].percent = 0
                     let pdfDest = outputDirectory(for: path)
                         .appendingPathComponent(
-                            "\(URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent)_\(selectedDevice).pdf")
+                            "\(srcURL.deletingPathExtension().lastPathComponent)_\(selectedDevice).pdf")
                     try await convertEbookToPDF(
-                        src: URL(fileURLWithPath: path), dest: pdfDest,
+                        src: srcURL, dest: pdfDest,
                         width: width, height: height,
                         serif: fontSerif, sans: fontSans, mono: fontMono,
                         fontSize: fontSize, path: path)
@@ -675,7 +677,8 @@ final class AppModel {
 
     private func convertEbookToPDF(
         src: URL, dest: URL, width: Int, height: Int,
-        serif: String, sans: String, mono: String, fontSize: Int, path: String
+        serif: String, sans: String, mono: String, fontSize: Int,
+        path: String
     ) async throws {
         let ext = src.pathExtension.lowercased()
         if convertEngine == .webkit {

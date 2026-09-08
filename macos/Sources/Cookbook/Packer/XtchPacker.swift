@@ -69,9 +69,27 @@ enum XtchPacker {
         if options.shouldCancel?() == true { throw XtchError.message("cancelled") }
         if let firstError { throw firstError }
 
-        try writeContainer(
-            destURL: destURL, pageBodies: pageBodies, width: options.width,
+        try write(
+            pageBodies: pageBodies, destURL: destURL, width: options.width,
             height: options.height, chapters: meta.chapters, title: meta.title, author: meta.author)
+    }
+
+    static func write(
+        pageBodies: [Data], destURL: URL, width: Int, height: Int,
+        chapters: [XtchChapter], title: String, author: String
+    ) throws {
+        if height % 8 != 0 {
+            throw XtchError.message("height \(height) must be a multiple of 8")
+        }
+        if pageBodies.isEmpty { throw XtchError.message("no pages to pack") }
+        if pageBodies.count > 0xFFFF {
+            throw XtchError.message("\(pageBodies.count) pages exceeds the 65535 limit")
+        }
+        try FileManager.default.createDirectory(
+            at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try writeContainer(
+            destURL: destURL, pageBodies: pageBodies, width: width,
+            height: height, chapters: chapters, title: title, author: author)
     }
 
     private struct PDFMeta {
@@ -104,16 +122,24 @@ enum XtchPacker {
         let gray = try rasterize(page: page, supersample: options.supersample)
         let fitted = fitToPanel(gray.pixels, srcWidth: gray.width, srcHeight: gray.height,
                                 srcRow: gray.rowBytes, dstWidth: options.width, dstHeight: options.height)
-        var planes = packPlanes(gray: fitted, width: options.width, height: options.height)
+        return wrapPageBody(
+            gray: fitted, width: options.width, height: options.height,
+            compress: options.pageCompression)
+    }
+
+    private static func wrapPageBody(
+        gray: [UInt8], width: Int, height: Int, compress: Bool
+    ) -> Data {
+        var planes = packPlanes(gray: gray, width: width, height: height)
         var compression: UInt8 = 0
-        if options.pageCompression, let deflated = RawDeflate.compress(planes), deflated.count < planes.count {
+        if compress, let deflated = RawDeflate.compress(planes), deflated.count < planes.count {
             planes = deflated
             compression = 1
         }
         var header = Data()
         header.appendLE(XtchFormat.xthMagic)
-        header.appendLE(UInt16(options.width))
-        header.appendLE(UInt16(options.height))
+        header.appendLE(UInt16(width))
+        header.appendLE(UInt16(height))
         header.appendLE(UInt8(0))
         header.appendLE(compression)
         header.appendLE(UInt32(planes.count))

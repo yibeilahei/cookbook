@@ -10,6 +10,8 @@
 - (void)_doAfterNextPresentationUpdate:(void (^)(void))block;
 - (void)_setBackgroundColor:(NSColor *)color;
 - (void)_setDrawsBackground:(BOOL)draws;
+- (void)_takePDFSnapshotWithConfiguration:(WKSnapshotConfiguration *)config
+                        completionHandler:(void (^)(NSData *pdfSnapshotData, NSError *error))completion;
 @end
 
 @implementation WKWebView (Cookbook)
@@ -59,6 +61,24 @@
         [self _doAfterNextPresentationUpdate:block];
     else
         block();
+}
+
+- (void)cookbookCapturePDFRect:(CGRect)rect
+                    completion:(void (^)(NSData *_Nullable, NSError *_Nullable))completion
+{
+    if (!completion)
+        return;
+    WKSnapshotConfiguration *snap = [[WKSnapshotConfiguration alloc] init];
+    snap.rect = rect;
+    if ([self respondsToSelector:@selector(_takePDFSnapshotWithConfiguration:completionHandler:)]) {
+        [self _takePDFSnapshotWithConfiguration:snap completionHandler:completion];
+        return;
+    }
+    WKPDFConfiguration *pdf = [[WKPDFConfiguration alloc] init];
+    pdf.rect = rect;
+    [self createPDFWithConfiguration:pdf completionHandler:^(NSData *data, NSError *error) {
+        completion(data, error);
+    }];
 }
 
 @end
