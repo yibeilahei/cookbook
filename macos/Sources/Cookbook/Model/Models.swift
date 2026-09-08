@@ -50,7 +50,11 @@ struct PreviewSession: Identifiable {
     let path: String
     var title: String
     var status: String
+    var pageCount = 0
+    /// 0-based index of the first page in the current 15-page screen.
+    var currentPage = 0
     var images: [NSImage] = []
+    var loading = true
 }
 
 struct DeviceDraft: Identifiable, Hashable {

@@ -42,6 +42,8 @@ final class AppModel {
     private var reloadGeneration = 0
     private let packCancel = PackCancel()
     private var filePanelOpen = false
+    private var previewDocument: XtchPreview.Document?
+    private var previewLoadGeneration = 0
 
     var isXtch: Bool { mode == .xtch }
 
@@ -272,30 +274,107 @@ final class AppModel {
     func openPreview(_ file: InputFile) async {
         guard file.canPreviewXtch, let xtch = file.outputPath else { return }
         let name = URL(fileURLWithPath: xtch).lastPathComponent
+        previewLoadGeneration += 1
+        previewDocument = nil
         preview = PreviewSession(
             path: xtch,
             title: L10n.t("previewTitleFor", ["name": name]),
-            status: L10n.t("renderingPages", ["n": "15"])
+            status: L10n.t("renderingPages", ["from": "1", "to": "\(XtchPreview.pagesPerScreen)"])
         )
         do {
-            let result = try await Task.detached {
-                try XtchPreview.images(from: URL(fileURLWithPath: xtch), maxPages: 15)
+            let doc = try await Task.detached {
+                try XtchPreview.Document(url: URL(fileURLWithPath: xtch))
             }.value
-            if var session = preview, session.path == xtch {
-                session.images = result.images
-                session.status = L10n.t("showingPages", [
-                    "shown": "\(result.images.count)",
-                    "total": "\(result.pageCount)",
-                    "s": result.pageCount == 1 ? "" : "s",
-                ])
+            guard preview?.path == xtch else { return }
+            previewDocument = doc
+            if var session = preview {
+                session.pageCount = doc.pageCount
                 preview = session
             }
+            if doc.pageCount == 0 {
+                if var session = preview {
+                    session.loading = false
+                    session.status = L10n.t("noPages")
+                    preview = session
+                }
+                return
+            }
+            await loadPreviewScreen(0)
         } catch {
             if var session = preview, session.path == xtch {
+                session.loading = false
                 session.status = L10n.t("errorMsg", ["msg": error.localizedDescription])
                 preview = session
             }
         }
+    }
+
+    func previewNext() async {
+        guard let session = preview else { return }
+        await previewGoToScreen(session.currentPage / XtchPreview.pagesPerScreen + 1)
+    }
+
+    func previewPrevious() async {
+        guard let session = preview else { return }
+        await previewGoToScreen(session.currentPage / XtchPreview.pagesPerScreen - 1)
+    }
+
+    /// `screen` is a 0-based index of a 15-page window.
+    func previewGoToScreen(_ screen: Int) async {
+        guard let session = preview, previewDocument != nil, session.pageCount > 0 else { return }
+        let screens = Self.previewScreenCount(pages: session.pageCount)
+        let clamped = max(0, min(screen, screens - 1))
+        let start = clamped * XtchPreview.pagesPerScreen
+        if session.currentPage == start, !session.images.isEmpty, !session.loading { return }
+        await loadPreviewScreen(start)
+    }
+
+    private func loadPreviewScreen(_ start: Int) async {
+        guard let doc = previewDocument, let path = preview?.path, doc.pageCount > 0 else { return }
+        let stride = XtchPreview.pagesPerScreen
+        let lastStart = ((doc.pageCount - 1) / stride) * stride
+        let clamped = max(0, min(start, lastStart))
+        let end = min(clamped + stride, doc.pageCount)
+        previewLoadGeneration += 1
+        let gen = previewLoadGeneration
+        if var session = preview, session.path == path {
+            session.currentPage = clamped
+            session.loading = true
+            session.status = L10n.t("renderingPages", [
+                "from": "\(clamped + 1)",
+                "to": "\(end)",
+            ])
+            preview = session
+        }
+        do {
+            let images = try await Task.detached {
+                try doc.images(from: clamped, count: stride)
+            }.value
+            guard gen == previewLoadGeneration, preview?.path == path else { return }
+            if var session = preview {
+                session.images = images
+                session.currentPage = clamped
+                session.loading = false
+                session.status = L10n.t("showingPages", [
+                    "from": "\(clamped + 1)",
+                    "to": "\(end)",
+                    "total": "\(session.pageCount)",
+                ])
+                preview = session
+            }
+        } catch {
+            guard gen == previewLoadGeneration, preview?.path == path else { return }
+            if var session = preview {
+                session.loading = false
+                session.status = L10n.t("errorMsg", ["msg": error.localizedDescription])
+                preview = session
+            }
+        }
+    }
+
+    static func previewScreenCount(pages: Int) -> Int {
+        guard pages > 0 else { return 0 }
+        return (pages + XtchPreview.pagesPerScreen - 1) / XtchPreview.pagesPerScreen
     }
 
     private func convertPdf() async {
