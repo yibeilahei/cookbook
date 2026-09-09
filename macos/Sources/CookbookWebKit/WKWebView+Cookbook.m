@@ -1,5 +1,26 @@
 #import "WKWebView+Cookbook.h"
 #import <AppKit/AppKit.h>
+#import <objc/runtime.h>
+
+@interface CookbookPrintFinish : NSObject
+@property (copy, nonatomic) void (^block)(BOOL success, NSError *_Nullable error);
+- (void)printOperationDidRun:(NSPrintOperation *)op success:(BOOL)success contextInfo:(void *)info;
+@end
+
+@implementation CookbookPrintFinish
+- (void)printOperationDidRun:(NSPrintOperation *)op success:(BOOL)success contextInfo:(void *)info
+{
+    void (^block)(BOOL, NSError *) = self.block;
+    self.block = nil;
+    if (!block)
+        return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        block(success, nil);
+    });
+}
+@end
+
+static char kCookbookPrintFinishKey;
 
 @interface WKWebView (CookbookPrivate)
 - (void)_setPaginationMode:(NSInteger)mode;
@@ -79,6 +100,68 @@
     [self createPDFWithConfiguration:pdf completionHandler:^(NSData *data, NSError *error) {
         completion(data, error);
     }];
+}
+
+- (void)cookbookPrintToFile:(NSURL *)url
+                  paperSize:(NSSize)paperSize
+                   fromPage:(NSInteger)fromPage
+                     toPage:(NSInteger)toPage
+                 completion:(void (^)(BOOL, NSError *_Nullable))completion
+{
+    if (!completion)
+        return;
+    if (!url.isFileURL) {
+        completion(NO, [NSError errorWithDomain:@"Cookbook" code:1
+            userInfo:@{NSLocalizedDescriptionKey: @"print URL must be a file"}]);
+        return;
+    }
+    NSWindow *win = self.window;
+    if (!win) {
+        completion(NO, [NSError errorWithDomain:@"Cookbook" code:1
+            userInfo:@{NSLocalizedDescriptionKey: @"WebKit view has no window"}]);
+        return;
+    }
+
+    NSMutableDictionary *dict = [[[NSPrintInfo sharedPrintInfo] dictionary] mutableCopy];
+    dict[NSPrintJobDisposition] = NSPrintSaveJob;
+    dict[NSPrintJobSavingURL] = url;
+    if (fromPage >= 1 && toPage >= fromPage) {
+        dict[NSPrintAllPages] = @NO;
+        dict[NSPrintFirstPage] = @(fromPage);
+        dict[NSPrintLastPage] = @(toPage);
+    } else {
+        dict[NSPrintAllPages] = @YES;
+    }
+    NSPrintInfo *info = [[NSPrintInfo alloc] initWithDictionary:dict];
+    info.paperSize = paperSize;
+    info.topMargin = 0;
+    info.bottomMargin = 0;
+    info.leftMargin = 0;
+    info.rightMargin = 0;
+    info.orientation = NSPaperOrientationPortrait;
+    info.horizontallyCentered = NO;
+    info.verticallyCentered = NO;
+    info.horizontalPagination = NSPrintingPaginationModeAutomatic;
+    info.verticalPagination = NSPrintingPaginationModeAutomatic;
+    info.scalingFactor = 1;
+
+    NSPrintOperation *op = [self printOperationWithPrintInfo:info];
+    op.showsPrintPanel = NO;
+    op.showsProgressPanel = NO;
+    // Must be YES: printing on the main thread deadlocks WebKit IPC.
+    // Long jobs are split into page ranges in Swift so WKPrintingView
+    // does not PAC-trap on a huge vertical-rl PDF.
+    op.canSpawnSeparateThread = YES;
+    op.view.frame = NSMakeRect(0, 0, paperSize.width, paperSize.height);
+
+    CookbookPrintFinish *done = [[CookbookPrintFinish alloc] init];
+    done.block = completion;
+    objc_setAssociatedObject(self, &kCookbookPrintFinishKey, done, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    [op runOperationModalForWindow:win
+                          delegate:done
+                    didRunSelector:@selector(printOperationDidRun:success:contextInfo:)
+                       contextInfo:NULL];
 }
 
 @end

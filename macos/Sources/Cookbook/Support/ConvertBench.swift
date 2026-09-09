@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import PDFKit
 
 /// CLI: `swift run Cookbook -- --bench /path/book.epub [--pages 24]`
 @MainActor
@@ -59,38 +58,21 @@ enum ConvertBench {
         let fonts = (serif: "Hiragino Mincho ProN", sans: "Hiragino Sans", mono: "Menlo")
         func log(_ line: String) { print("  \(line)") }
 
-        let pdf = out.appendingPathComponent("vector.pdf")
+        let xtch = out.appendingPathComponent("book.xtch")
         let t1 = Date()
-        try await WebKitPDF.shared.ebookToPDF(
-            src: epub, dest: pdf,
+        try await WebKitPDF.shared.ebookToXtch(
+            src: epub, dest: xtch,
             pageWidth: 528, pageHeight: 792,
             serif: fonts.serif, sans: fonts.sans, mono: fonts.mono, fontSize: 60,
+            supersample: 3, pageCompression: false,
             maxPages: maxPages,
             onProgress: { _, _ in }, onLog: log, shouldCancel: { false })
-        let pdfSec = Date().timeIntervalSince(t1)
-        let pdfPages = PDFDocument(url: pdf)?.pageCount ?? 0
+        let sec = Date().timeIntervalSince(t1)
+        let packedPages = try pageCount(xtch: xtch)
         print("")
-        print("1) EPUB → PDF (vector)")
-        print("   \(fmt(pdfSec))   \(pdfPages) pages   \(bytes(pdf))")
-
-        let xtchFromPdf = out.appendingPathComponent("from-pdf.xtch")
-        let t2 = Date()
-        try await Task.detached(priority: .userInitiated) {
-            try XtchPacker.pack(
-                pdfURL: pdf, destURL: xtchFromPdf,
-                options: .init(
-                    width: 528, height: 792, supersample: 3,
-                    pageCompression: false, onPage: nil, shouldCancel: { false }))
-        }.value
-        let packSec = Date().timeIntervalSince(t2)
-        let packedPages = try pageCount(xtch: xtchFromPdf)
-        print("")
-        print("2) PDF → XTCH")
-        print("   \(fmt(packSec))   \(packedPages) pages   \(bytes(xtchFromPdf))")
-
-        print("")
-        print("summary")
-        print("  EPUB → PDF → XTCH   \(fmt(pdfSec + packSec))  \(perPage(pdfSec + packSec, packedPages))  (pdf \(fmt(pdfSec)) + pack \(fmt(packSec)))")
+        print("EPUB → XTCH (pack on arrival, no PDF)")
+        print("   \(fmt(sec))   \(packedPages) pages   \(bytes(xtch))")
+        print("   \(perPage(sec, packedPages))")
         print("  files \(out.path)")
     }
 

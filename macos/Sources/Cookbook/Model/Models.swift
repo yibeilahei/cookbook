@@ -58,8 +58,10 @@ struct PreviewSession: Identifiable {
     var title: String
     var status: String
     var pageCount = 0
-    /// 0-based index of the first page in the current 15-page screen.
+    /// 0-based index of the first page on the current screen.
     var currentPage = 0
+    /// How many page slots the preview grid currently fits (0 until laid out).
+    var pagesPerScreen = 0
     var images: [NSImage] = []
     var loading = true
 }

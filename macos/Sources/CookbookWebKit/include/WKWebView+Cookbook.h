@@ -17,6 +17,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)cookbookCapturePDFRect:(CGRect)rect
                     completion:(void (^)(NSData *_Nullable data, NSError *_Nullable error))completion
     NS_SWIFT_NAME(cookbookCapturePDF(rect:_:));
+/// One print job to a PDF file (Calibre-style). Paper size is in points.
+/// `fromPage`/`toPage` are 1-based inclusive; pass 0,0 for all pages.
+- (void)cookbookPrintToFile:(NSURL *)url
+                  paperSize:(NSSize)paperSize
+                   fromPage:(NSInteger)fromPage
+                     toPage:(NSInteger)toPage
+                 completion:(void (^)(BOOL success, NSError *_Nullable error))completion
+    NS_SWIFT_NAME(cookbookPrint(to:paperSize:from:to:_:));
 
 @end
 

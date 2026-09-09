@@ -3,7 +3,6 @@ import Foundation
 
 /// Unpack XTCH pages to NSImage for the in-app preview sheet.
 enum XtchPreview {
-    static let pagesPerScreen = 15
 
     /// Parsed XTCH file; decode pages on demand so a long book stays in RAM as one file, not every bitmap.
     struct Document: Sendable {

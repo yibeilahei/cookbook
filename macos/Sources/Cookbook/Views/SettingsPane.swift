@@ -13,18 +13,25 @@ struct SettingsPane: View {
                     .font(.headline)
             }
             Section {
-                Picker(L10n.t("engine"), selection: Binding(
-                    get: { model.convertEngine },
-                    set: { newValue in
-                        Task { await model.engineChanged(newValue) }
+                if model.isXtch {
+                    Picker(L10n.t("engine"), selection: Binding(
+                        get: { model.convertEngine },
+                        set: { newValue in
+                            Task { await model.engineChanged(newValue) }
+                        }
+                    )) {
+                        Text(L10n.t("engineWebKit")).tag(ConvertEngine.webkit)
+                        Text(L10n.t("engineCalibre")).tag(ConvertEngine.calibre)
                     }
-                )) {
-                    Text(L10n.t("engineWebKit")).tag(ConvertEngine.webkit)
-                    Text(L10n.t("engineCalibre")).tag(ConvertEngine.calibre)
+                    .pickerStyle(.radioGroup)
+                    Text(L10n.t("engineHint"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(L10n.t("enginePdfCalibre"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text(L10n.t("engineHint"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section {

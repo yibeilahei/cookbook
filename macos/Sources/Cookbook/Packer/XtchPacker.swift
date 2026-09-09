@@ -119,6 +119,61 @@ enum XtchPacker {
         guard let page = doc.page(at: pageIndex + 1) else {
             throw XtchError.message("Missing PDF page \(pageIndex + 1)")
         }
+        return try pageBody(page: page, options: options)
+    }
+
+    /// Pack one in-memory single-page PDF (WebKit `createPDF` / print snapshot).
+    static func pageBody(fromPDF data: Data, options: Options) throws -> Data {
+        try pageBodies(fromPDF: data, columns: 1, rtl: false, options: options)[0]
+    }
+
+    /// Raster a 1-page PDF that may be N Books columns wide; slice in the bitmap
+    /// (not by drawing into another PDF — that duplicates the content stream).
+    /// `rtl`: vertical-rl strips have later columns on the left.
+    static func pageBodies(
+        fromPDF data: Data, columns: Int, rtl: Bool, options: Options
+    ) throws -> [Data] {
+        guard let provider = CGDataProvider(data: data as CFData),
+              let doc = CGPDFDocument(provider),
+              let page = doc.page(at: 1)
+        else {
+            throw XtchError.message("WebKit PDF page was empty")
+        }
+        let cols = max(1, columns)
+        if cols == 1 { return [try pageBody(page: page, options: options)] }
+        let gray = try rasterize(page: page, supersample: options.supersample)
+        let n = cols
+        let colW = gray.width / n
+        if colW < 8 {
+            return [try pageBody(page: page, options: options)]
+        }
+        var bodies: [Data] = []
+        bodies.reserveCapacity(n)
+        for i in 0..<n {
+            let srcCol = rtl ? (n - 1 - i) : i
+            let x0 = srcCol * colW
+            let x1 = srcCol == n - 1 ? gray.width : (srcCol + 1) * colW
+            let sw = max(1, x1 - x0)
+            var slice = [UInt8](repeating: 255, count: sw * gray.height)
+            for y in 0..<gray.height {
+                let srcOff = y * gray.rowBytes + x0
+                let dstOff = y * sw
+                slice.replaceSubrange(dstOff..<(dstOff + sw), with: gray.pixels[srcOff..<(srcOff + sw)])
+            }
+            let fitted = fitToPanel(
+                slice, srcWidth: sw, srcHeight: gray.height, srcRow: sw,
+                dstWidth: options.width, dstHeight: options.height)
+            bodies.append(wrapPageBody(
+                gray: fitted, width: options.width, height: options.height,
+                compress: options.pageCompression))
+        }
+        return bodies
+    }
+
+    static func pageBody(page: CGPDFPage, options: Options) throws -> Data {
+        if options.height % 8 != 0 {
+            throw XtchError.message("height \(options.height) must be a multiple of 8")
+        }
         let gray = try rasterize(page: page, supersample: options.supersample)
         let fitted = fitToPanel(gray.pixels, srcWidth: gray.width, srcHeight: gray.height,
                                 srcRow: gray.rowBytes, dstWidth: options.width, dstHeight: options.height)

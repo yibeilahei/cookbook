@@ -71,6 +71,7 @@ final class AppModel {
     func applyMode(_ newMode: ConvertMode) async {
         selectedFile = nil
         await reload(kind: newMode)
+        await checkCalibre()
     }
 
     func reloadForMode() async {
@@ -93,7 +94,8 @@ final class AppModel {
     }
 
     func checkCalibre() async {
-        if convertEngine == .webkit {
+        // PDF output always uses ebook-convert. XTCH can skip Calibre when WebKit handles the file.
+        if convertEngine == .webkit, mode == .xtch {
             calibreHint = nil
             return
         }
@@ -297,7 +299,7 @@ final class AppModel {
         preview = PreviewSession(
             path: xtch,
             title: L10n.t("previewTitleFor", ["name": name]),
-            status: L10n.t("renderingPages", ["from": "1", "to": "\(XtchPreview.pagesPerScreen)"])
+            status: L10n.t("renderingPages", ["from": "1", "to": "1"])
         )
         do {
             let doc = try await Task.detached {
@@ -317,7 +319,9 @@ final class AppModel {
                 }
                 return
             }
-            await loadPreviewScreen(0)
+            if let n = preview?.pagesPerScreen, n > 0 {
+                await loadPreviewScreen(0)
+            }
         } catch {
             if var session = preview, session.path == xtch {
                 session.loading = false
@@ -328,28 +332,40 @@ final class AppModel {
     }
 
     func previewNext() async {
-        guard let session = preview else { return }
-        await previewGoToScreen(session.currentPage / XtchPreview.pagesPerScreen + 1)
+        guard let session = preview, session.pagesPerScreen > 0 else { return }
+        await previewGoToScreen(session.currentPage / session.pagesPerScreen + 1)
     }
 
     func previewPrevious() async {
-        guard let session = preview else { return }
-        await previewGoToScreen(session.currentPage / XtchPreview.pagesPerScreen - 1)
+        guard let session = preview, session.pagesPerScreen > 0 else { return }
+        await previewGoToScreen(session.currentPage / session.pagesPerScreen - 1)
     }
 
-    /// `screen` is a 0-based index of a 15-page window.
+    /// `screen` is a 0-based index of a window of `pagesPerScreen` pages.
     func previewGoToScreen(_ screen: Int) async {
-        guard let session = preview, previewDocument != nil, session.pageCount > 0 else { return }
-        let screens = Self.previewScreenCount(pages: session.pageCount)
+        guard let session = preview, previewDocument != nil, session.pageCount > 0,
+              session.pagesPerScreen > 0 else { return }
+        let stride = session.pagesPerScreen
+        let screens = Self.previewScreenCount(pages: session.pageCount, stride: stride)
         let clamped = max(0, min(screen, screens - 1))
-        let start = clamped * XtchPreview.pagesPerScreen
-        if session.currentPage == start, !session.images.isEmpty, !session.loading { return }
+        let start = clamped * stride
+        if session.currentPage == start, session.images.count == min(stride, session.pageCount - start),
+           !session.loading { return }
         await loadPreviewScreen(start)
+    }
+
+    /// Called when the preview grid's fitted page count changes.
+    func previewSetPageCapacity(_ count: Int) async {
+        guard count > 0, var session = preview else { return }
+        if session.pagesPerScreen == count, !session.images.isEmpty { return }
+        session.pagesPerScreen = count
+        preview = session
+        await loadPreviewScreen(session.currentPage)
     }
 
     private func loadPreviewScreen(_ start: Int) async {
         guard let doc = previewDocument, let path = preview?.path, doc.pageCount > 0 else { return }
-        let stride = XtchPreview.pagesPerScreen
+        let stride = max(preview?.pagesPerScreen ?? 0, 1)
         let lastStart = ((doc.pageCount - 1) / stride) * stride
         let clamped = max(0, min(start, lastStart))
         let end = min(clamped + stride, doc.pageCount)
@@ -390,9 +406,10 @@ final class AppModel {
         }
     }
 
-    static func previewScreenCount(pages: Int) -> Int {
+    static func previewScreenCount(pages: Int, stride: Int = 1) -> Int {
+        let n = max(stride, 1)
         guard pages > 0 else { return 0 }
-        return (pages + XtchPreview.pagesPerScreen - 1) / XtchPreview.pagesPerScreen
+        return (pages + n - 1) / n
     }
 
     private func convertPdf() async {
@@ -451,6 +468,31 @@ final class AppModel {
                 let dest = xtchDestination(for: path)
                 let srcURL = URL(fileURLWithPath: path)
                 let ext = srcURL.pathExtension.lowercased()
+                if convertEngine == .webkit, ext != "pdf", WebKitPDF.canConvert(extension: ext) {
+                    files[idx].stage = "convert"
+                    files[idx].percent = 0
+                    appendLog(path: path, "WebKit → \(dest.path)")
+                    try await WebKitPDF.shared.ebookToXtch(
+                        src: srcURL, dest: dest,
+                        pageWidth: width, pageHeight: height,
+                        serif: fontSerif, sans: fontSans, mono: fontMono, fontSize: fontSize,
+                        supersample: supersample, pageCompression: compress,
+                        onProgress: { percent, message in
+                            self.setCalibreProgress(path: path, percent: percent, message: message)
+                        },
+                        onLog: { line in
+                            self.appendLog(path: path, line)
+                        },
+                        shouldCancel: { cancel.isCancelled }
+                    )
+                    if let i = files.firstIndex(where: { $0.path == path }) {
+                        files[i].stage = "done"
+                        files[i].percent = 100
+                        files[i].outputPath = dest.path
+                        appendLog(path: path, "Wrote \(dest.path)")
+                    }
+                    continue
+                }
                 var pdfURL = srcURL
                 if ext != "pdf" {
                     files[idx].stage = "convert"
@@ -675,32 +717,13 @@ final class AppModel {
         return nil
     }
 
+    /// PDF files always come from Calibre. WebKit snapshots make huge PDFs
+    /// (fonts re-embedded per page); ebook-convert print-to-PDF does not.
     private func convertEbookToPDF(
         src: URL, dest: URL, width: Int, height: Int,
         serif: String, sans: String, mono: String, fontSize: Int,
         path: String
     ) async throws {
-        let ext = src.pathExtension.lowercased()
-        if convertEngine == .webkit {
-            if WebKitPDF.canConvert(extension: ext) {
-                appendLog(path: path, "WebKit → \(dest.path)")
-                let cancel = packCancel
-                try await WebKitPDF.shared.ebookToPDF(
-                    src: src, dest: dest,
-                    pageWidth: width, pageHeight: height,
-                    serif: serif, sans: sans, mono: mono, fontSize: fontSize,
-                    onProgress: { percent, message in
-                        self.setCalibreProgress(path: path, percent: percent, message: message)
-                    },
-                    onLog: { line in
-                        self.appendLog(path: path, line)
-                    },
-                    shouldCancel: { cancel.isCancelled }
-                )
-                return
-            }
-            throw WebKitConvertError.formatNeedsCalibre(ext)
-        }
         let size = "\(width)x\(height)"
         appendLog(path: path, "ebook-convert → \(dest.path)")
         try await runCalibre(
@@ -784,8 +807,8 @@ final class AppModel {
             appendLog(path: path, "ebook-convert failed")
             return
         }
-        if let error = error as? WebKitConvertError, case .failed = error {
-            appendLog(path: path, "WebKit convert failed")
+        if let error = error as? WebKitConvertError, case .failed(let s) = error {
+            appendLog(path: path, "WebKit convert failed: \(s)")
             return
         }
         appendLog(path: path, error.localizedDescription)
@@ -795,8 +818,9 @@ final class AppModel {
         if let error = error as? CalibreError, case .failed = error {
             return "ebook-convert failed"
         }
-        if let error = error as? WebKitConvertError, case .failed = error {
-            return "WebKit convert failed"
+        if let error = error as? WebKitConvertError, case .failed(let s) = error {
+            if s.count > 200 { return "WebKit convert failed: " + String(s.prefix(180)) + "…" }
+            return "WebKit convert failed: \(s)"
         }
         let text = error.localizedDescription
         if text.count > 200 { return String(text.prefix(200)) + "…" }
