@@ -103,12 +103,12 @@ struct ConvertPane: View {
                             Button(L10n.t("cancel")) {
                                 Task { await model.cancel() }
                             }
-                        } else {
+                        } else if !file.isXtchSource {
                             Button(L10n.t("convert")) {
                                 Task { await model.convert(paths: [file.path]) }
                             }
                         }
-                        if model.isXtch && file.canPreviewXtch {
+                        if file.canPreviewXtch {
                             Button(L10n.t("previewBtn")) {
                                 Task { await model.openPreview(file) }
                             }
@@ -196,13 +196,13 @@ private struct FileRow: View {
                         Task { await model.cancel() }
                     }
                     .buttonStyle(.borderless)
-                } else {
+                } else if !file.isXtchSource {
                     Button(L10n.t("convert")) {
                         Task { await model.convert(paths: [file.path]) }
                     }
                     .buttonStyle(.borderless)
                 }
-                if model.isXtch && file.canPreviewXtch {
+                if file.canPreviewXtch {
                     Button(L10n.t("previewBtn")) {
                         Task { await model.openPreview(file) }
                     }

@@ -46,10 +46,15 @@ struct InputFile: Identifiable, Hashable {
     var log: [String] = []
     var id: String { path }
     var name: String { URL(fileURLWithPath: path).lastPathComponent }
-    var canPreviewXtch: Bool {
-        guard let outputPath else { return false }
-        return URL(fileURLWithPath: outputPath).pathExtension.lowercased() == "xtch"
+    var isXtchSource: Bool {
+        URL(fileURLWithPath: path).pathExtension.lowercased() == "xtch"
     }
+    var previewXtchPath: String? {
+        if isXtchSource { return path }
+        guard let outputPath else { return nil }
+        return URL(fileURLWithPath: outputPath).pathExtension.lowercased() == "xtch" ? outputPath : nil
+    }
+    var canPreviewXtch: Bool { previewXtchPath != nil }
 }
 
 struct PreviewSession: Identifiable {

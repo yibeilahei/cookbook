@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import WebKit
 
-/// Typeset EPUB/HTML/TXT with WebKit (no Calibre).
+/// Typeset EPUB/HTML/TXT/Kindle with WebKit (no Calibre).
 /// Several offscreen WKWebViews capture independent spine files in parallel.
 @MainActor
 final class WebKitPDF {
@@ -88,7 +88,9 @@ final class WebKitPDF {
         let tAll = Date()
         let tUnpack = Date()
         let prepared = try prepareJobs(src: src, ext: ext)
-        onLog("unpacked \(prepared.jobs.count) spine file\(prepared.jobs.count == 1 ? "" : "s") in \(WebKitLog.fmt(tUnpack))  “\(prepared.title)”")
+        let spineWord = prepared.jobs.count == 1 ? "spine file" : "spine files"
+        let extra = prepared.note.isEmpty ? "" : prepared.note
+        onLog("unpacked \(prepared.jobs.count) \(spineWord)\(extra) in \(WebKitLog.fmt(tUnpack))  “\(prepared.title)”")
         let pack = XtchPacker.Options(
             width: pageWidth, height: pageHeight, supersample: max(supersample, 1),
             pageCompression: pageCompression, onPage: nil,
@@ -125,6 +127,7 @@ final class WebKitPDF {
         var cleanup: URL?
         var title: String
         var author: String
+        var note: String = ""
     }
 
     private func prepareJobs(src: URL, ext: String) throws -> PreparedJobs {
@@ -150,6 +153,20 @@ final class WebKitPDF {
                                       accessRoot: html.deletingLastPathComponent())],
                 cleanup: html.deletingLastPathComponent(),
                 title: src.deletingPathExtension().lastPathComponent, author: "")
+        case "mobi", "azw", "azw3", "prc":
+            let unpacked = try KindleBook.unpack(src)
+            let jobs = unpacked.items.map {
+                WebKitPrintJob(url: $0.href, mediaType: $0.mediaType, accessRoot: unpacked.root)
+            }
+            let note: String
+            if unpacked.parts > jobs.count {
+                note = " (from \(unpacked.parts) KF8 parts)"
+            } else {
+                note = ""
+            }
+            return PreparedJobs(
+                jobs: jobs, cleanup: unpacked.root,
+                title: unpacked.title, author: unpacked.author, note: note)
         default:
             throw WebKitConvertError.formatNeedsCalibre(ext)
         }

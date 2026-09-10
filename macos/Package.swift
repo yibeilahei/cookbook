@@ -12,6 +12,20 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "LibMobi",
+            path: "Sources/LibMobi",
+            exclude: ["COPYING", "NOTICE"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("src"),
+                .define("HAVE_STRDUP"),
+                .define("PACKAGE_VERSION", to: "\"0.12\""),
+            ],
+            linkerSettings: [
+                .linkedLibrary("z"),
+            ]
+        ),
+        .target(
             name: "CookbookWebKit",
             path: "Sources/CookbookWebKit",
             publicHeadersPath: "include",
@@ -22,7 +36,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "Cookbook",
-            dependencies: ["CookbookWebKit"],
+            dependencies: ["CookbookWebKit", "LibMobi"],
             path: "Sources/Cookbook",
             resources: [
                 .copy("Resources/strings.json")

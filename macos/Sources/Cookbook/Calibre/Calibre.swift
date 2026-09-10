@@ -9,7 +9,7 @@ enum CalibreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notFound:
-            return "ebook-convert not found. Switch the engine to WebKit for EPUB/HTML/TXT, or install Calibre:\n  brew install --cask calibre\n  or download from https://calibre-ebook.com"
+            return "ebook-convert not found. Switch the engine to WebKit for EPUB/HTML/TXT/Kindle, or install Calibre:\n  brew install --cask calibre\n  or download from https://calibre-ebook.com"
         case .failed(let s): return s
         case .cancelled: return "cancelled"
         }

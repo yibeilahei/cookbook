@@ -157,13 +157,24 @@ final class AppModel {
         let incoming = InputFiles.expand(paths)
         var existing = Set(files.map(\.path))
         var newFiles: [String] = []
-        for path in incoming where !existing.contains(path) {
+        var xtchToPreview: String?
+        for path in incoming {
+            let xtch = URL(fileURLWithPath: path).pathExtension.lowercased() == "xtch"
+            if xtch { xtchToPreview = path }
+            guard !existing.contains(path) else { continue }
             existing.insert(path)
-            files.append(InputFile(path: path))
-            newFiles.append(path)
+            if xtch {
+                files.append(InputFile(path: path, stage: "done", percent: 100, outputPath: path))
+            } else {
+                files.append(InputFile(path: path))
+                newFiles.append(path)
+            }
         }
         if !newFiles.isEmpty {
             await detectAndApplyLanguage(newFiles)
+        }
+        if let xtchToPreview, let file = files.first(where: { $0.path == xtchToPreview }) {
+            await openPreview(file)
         }
     }
 
@@ -232,6 +243,7 @@ final class AppModel {
         let requested = paths ?? files.map(\.path)
         let targets = requested.filter { path in
             guard files.contains(where: { $0.path == path }) else { return false }
+            if URL(fileURLWithPath: path).pathExtension.lowercased() == "xtch" { return false }
             if isConverting(path) { return false }
             // Explicit Convert on a row re-runs even after a successful convert.
             if paths == nil, files.first(where: { $0.path == path })?.stage == "done" {
@@ -292,7 +304,7 @@ final class AppModel {
     }
 
     func openPreview(_ file: InputFile) async {
-        guard file.canPreviewXtch, let xtch = file.outputPath else { return }
+        guard let xtch = file.previewXtchPath else { return }
         let name = URL(fileURLWithPath: xtch).lastPathComponent
         previewLoadGeneration += 1
         previewDocument = nil

@@ -5,10 +5,9 @@ macOS 14+ app (Apple Silicon and Intel) that converts ebooks and PDFs for eink r
 - **`.xtch`** — Xteink / CrossPoint devices
 - **Panel-sized PDF** — Kindle, Sony DPT, and similar
 
-Ebook → PDF uses **WebKit** (EPUB, HTML, TXT) or Calibre's `ebook-convert`
-(any format Calibre supports). PDF → `.xtch` is packed in Swift
-([format](docs/xtch.md)). Calibre is optional unless you convert Kindle/MOBI,
-FB2, or similar.
+Ebook → PDF uses **WebKit** (EPUB, HTML, TXT, Kindle MOBI/AZW/AZW3) or Calibre's
+`ebook-convert` (any format Calibre supports). PDF → `.xtch` is packed in Swift
+([format](docs/xtch.md)). Calibre is optional unless you convert FB2 or similar.
 
 ## Install
 
@@ -20,8 +19,9 @@ install with:
 ```
 
 The script copies `Cookbook.app` to `~/Applications` and opens it. EPUB, HTML,
-TXT, and PDF work with the built-in WebKit engine. For Kindle/MOBI, FB2, and
-other formats, install Calibre and switch **Engine** to Calibre in Settings:
+TXT, Kindle (MOBI/AZW/AZW3), and PDF work with the built-in WebKit engine. For
+FB2 and other formats, install Calibre and switch **Engine** to Calibre in
+Settings:
 
 ```sh
 brew install --cask calibre
@@ -45,7 +45,7 @@ edits in UserDefaults.
 
 | Setting | Meaning |
 | --- | --- |
-| Engine | **WebKit** converts EPUB, HTML, and TXT without Calibre. **Calibre** handles Kindle/MOBI, FB2, and other formats. |
+| Engine | **WebKit** converts EPUB, HTML, TXT, and Kindle (MOBI/AZW/AZW3) without Calibre. **Calibre** handles FB2 and other formats. |
 | Language | Script bucket for font presets. Detected from the OS and, when possible, from book metadata. |
 | Fonts / size | Families and default size Calibre uses for ebook → PDF. |
 | Page compression | `.xtch` only. Raw-DEFLATE per page when smaller. Only lazahata firmware supports this; leave off otherwise. |

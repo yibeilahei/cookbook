@@ -1,0 +1,9 @@
+This directory vendors libmobi 0.12 (read/unpack sources only).
+
+  https://github.com/bfabiszewski/libmobi
+  Copyright (c) 2014–2022 Bartek Fabiszewski
+  License: GNU Lesser General Public License v3.0 or later (see COPYING)
+
+Cookbook (MIT) links this library. The Combined Work’s Corresponding
+Application Code is the rest of this repository, so a modified libmobi
+can be rebuilt and relinked from source.

@@ -51,5 +51,8 @@ struct ContentView: View {
         .sheet(item: $model.preview) { _ in
             PreviewSheet()
         }
+        .onOpenURL { url in
+            Task { await model.addPaths([url.path]) }
+        }
     }
 }

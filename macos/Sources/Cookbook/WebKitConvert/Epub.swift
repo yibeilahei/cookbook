@@ -15,11 +15,12 @@ enum EpubBook {
     ]
 
     static func canOpen(_ ext: String) -> Bool {
-        ["epub", "html", "htm", "xhtml", "txt"].contains(ext)
+        ["epub", "html", "htm", "xhtml", "txt"].contains(ext) || KindleBook.canOpen(ext)
     }
 
     static func language(at path: String) -> String? {
         let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+        if KindleBook.canOpen(ext) { return KindleBook.language(at: path) }
         guard ext == "epub" else { return nil }
         guard let opf = try? unzipToString(epub: path, memberSuffix: ".opf") else { return nil }
         return language(fromOPF: opf)

@@ -42,10 +42,29 @@ struct CookbookApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var model: AppModel?
+    var model: AppModel? {
+        didSet { flushPendingOpens() }
+    }
+    private var pendingOpens: [String] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if ConvertBench.launchIfRequested() { return }
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let paths = urls.map(\.path)
+        if model != nil {
+            Task { await model?.addPaths(paths) }
+        } else {
+            pendingOpens.append(contentsOf: paths)
+        }
+    }
+
+    private func flushPendingOpens() {
+        guard let model, !pendingOpens.isEmpty else { return }
+        let paths = pendingOpens
+        pendingOpens = []
+        Task { await model.addPaths(paths) }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

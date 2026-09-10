@@ -16,11 +16,13 @@ cookbook/
       Views/                window, convert list, settings, sheets
       Model/                app state and file-list types
       Calibre/              ebook-convert / ebook-meta
-      WebKitConvert/        EPUB/HTML/TXT → PDF without Calibre
+      WebKitConvert/        EPUB/HTML/TXT/Kindle → PDF without Calibre
       Packer/               PDF → XTCH and preview unpack
       Config/               built-in device defaults + UserDefaults
       Support/              l10n, fonts
       Resources/strings.json
+    Sources/CookbookWebKit/ WKWebView private pagination
+    Sources/LibMobi/        vendored libmobi 0.12 (LGPL) Kindle unpacker
   .github/workflows/        tag `v*.*.*` → Release with .dmg
 ```
 
@@ -31,7 +33,8 @@ under UserDefaults keys `dev.cookbook.config.xtch` and
 ## Run from source
 
 macOS 14+ (Apple Silicon or Intel), Xcode or Command Line Tools. Calibre only
-for Kindle/MOBI and other non-WebKit formats.
+for FB2 and other non-WebKit formats. Kindle MOBI/AZW/AZW3 unpacks with the
+bundled libmobi (LGPL; sources in `macos/Sources/LibMobi`).
 
 ```sh
 brew install --cask calibre          # if needed
@@ -48,7 +51,8 @@ macos/scripts/build-app.sh           # dist/Cookbook.app and dist/Cookbook.dmg
 ```
 
 The `.app` is a universal binary (`arm64` + `x86_64`). Calibre is not
-bundled. Builds are ad-hoc signed (no Developer ID).
+bundled; libmobi is compiled into the binary. Builds are ad-hoc signed
+(no Developer ID).
 
 ## Release
 

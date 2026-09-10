@@ -6,7 +6,7 @@ enum InputFiles {
     static let extensions: Set<String> = [
         "epub", "mobi", "azw", "azw3", "fb2", "lit", "lrf", "pdb", "rtf", "txt",
         "htmlz", "html", "cbz", "cbr", "cbc", "chm", "djvu", "docx", "odt", "prc",
-        "pml", "rb", "snb", "tcr", "pdf",
+        "pml", "rb", "snb", "tcr", "pdf", "xtch",
     ]
 
     static var contentTypes: [UTType] {
